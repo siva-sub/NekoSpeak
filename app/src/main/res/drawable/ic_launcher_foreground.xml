@@ -1,0 +1,82 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+  <group android:scaleX="0.6"
+      android:scaleY="0.6"
+      android:translateX="21.6"
+      android:translateY="21.6">
+    <!-- Cat face background circle -->
+    <path
+        android:pathData="M54,54m-45,0a45,45 0,1 1,90 0a45,45 0,1 1,-90 0"
+        android:fillColor="#E0AAFF"/>
+    
+    <!-- Cat ears -->
+    <path
+        android:pathData="M25,20 L35,10 L40,25 Z"
+        android:fillColor="#7209B7"/>
+    <path
+        android:pathData="M83,20 L73,10 L68,25 Z"
+        android:fillColor="#7209B7"/>
+    
+    <!-- Inner ear -->
+    <path
+        android:pathData="M28,20 L33,14 L36,22 Z"
+        android:fillColor="#9D4EDD"/>
+    <path
+        android:pathData="M80,20 L75,14 L72,22 Z"
+        android:fillColor="#9D4EDD"/>
+    
+    <!-- Cat eyes -->
+    <path
+        android:pathData="M38,32 C46,32 46,52 38,52 C30,32 30,52 38,32 Z"
+        android:fillColor="#1A0B2E"/>
+    <path
+        android:pathData="M70,32 C78,32 78,52 70,52 C62,32 62,52 70,32 Z"
+        android:fillColor="#1A0B2E"/>
+    
+    <!-- Eye highlights -->
+    <path
+        android:pathData="M40,35 C43,35 43,43 40,43 C37,35 37,43 40,35 Z"
+        android:fillColor="#FFFFFF"/>
+    <path
+        android:pathData="M72,35 C75,35 75,43 72,43 C69,35 69,43 72,35 Z"
+        android:fillColor="#FFFFFF"/>
+    
+    <!-- Cat nose -->
+    <path
+        android:pathData="M54,54 L48,60 L60,60 Z"
+        android:fillColor="#FF6B9D"/>
+    
+    <!-- Cat mouth -->
+    <path
+        android:pathData="M54,60 Q42,70 36,65 Q48,72 54,72 Q60,72 72,65 Q66,70 54,60"
+        android:strokeColor="#7209B7"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:strokeLineCap="round"/>
+    
+    <!-- Whiskers -->
+    <path
+        android:pathData="M20,50 L35,52"
+        android:strokeColor="#7209B7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M20,58 L35,56"
+        android:strokeColor="#7209B7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M88,50 L73,52"
+        android:strokeColor="#7209B7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M88,58 L73,56"
+        android:strokeColor="#7209B7"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"/>
+  </group>
+</vector>

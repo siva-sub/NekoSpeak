@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Neko-themed purple/pink color palette -->
+    
+    <!-- Core Neko Colors -->
+    <color name="neko_navy">#1A0B2E</color>
+    <color name="neko_purple">#7209B7</color>
+    <color name="neko_light_purple">#9D4EDD</color>
+    <color name="neko_pink">#E0AAFF</color>
+    <color name="neko_light_pink">#F8E8FF</color>
+    
+    <!-- Material Design 3 base colors -->
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    
+    <color name="purple_80">#D0BCFF</color>
+    <color name="purple_grey_80">#CCC2DC</color>
+    <color name="pink_80">#EFB8C8</color>
+    
+    <color name="purple_40">#6650A4</color>
+    <color name="purple_grey_40">#625B71</color>
+    <color name="pink_40">#7D5260</color>
+    
+    <!-- Light Theme Neko Colors -->
+    <color name="neko_light_primary">#7209B7</color>
+    <color name="neko_light_on_primary">#FFFFFF</color>
+    <color name="neko_light_primary_container">#E0AAFF</color>
+    <color name="neko_light_on_primary_container">#1A0B2E</color>
+    
+    <color name="neko_light_secondary">#9D4EDD</color>
+    <color name="neko_light_on_secondary">#FFFFFF</color>
+    <color name="neko_light_secondary_container">#F8E8FF</color>
+    <color name="neko_light_on_secondary_container">#2D1B2E</color>
+    
+    <color name="neko_light_tertiary">#E0AAFF</color>
+    <color name="neko_light_on_tertiary">#2D1B2E</color>
+    <color name="neko_light_tertiary_container">#F8E8FF</color>
+    <color name="neko_light_on_tertiary_container">#1A0B2E</color>
+    
+    <color name="neko_light_error">#BA1A1A</color>
+    <color name="neko_light_error_container">#FFDAD6</color>
+    <color name="neko_light_on_error">#FFFFFF</color>
+    <color name="neko_light_on_error_container">#410002</color>
+    
+    <color name="neko_light_background">#FFFBFE</color>
+    <color name="neko_light_on_background">#1C1B1F</color>
+    <color name="neko_light_surface">#FFFBFE</color>
+    <color name="neko_light_on_surface">#1C1B1F</color>
+    
+    <color name="neko_light_surface_variant">#E7E0EC</color>
+    <color name="neko_light_on_surface_variant">#49454F</color>
+    <color name="neko_light_outline">#79747E</color>
+    <color name="neko_light_inverse_on_surface">#F4EFF4</color>
+    <color name="neko_light_inverse_surface">#313033</color>
+    <color name="neko_light_inverse_primary">#E0AAFF</color>
+    
+    <!-- Dark Theme Neko Colors -->
+    <color name="neko_dark_primary">#E0AAFF</color>
+    <color name="neko_dark_on_primary">#1A0B2E</color>
+    <color name="neko_dark_primary_container">#7209B7</color>
+    <color name="neko_dark_on_primary_container">#F8E8FF</color>
+    
+    <color name="neko_dark_secondary">#D0BCFF</color>
+    <color name="neko_dark_on_secondary">#2D1B2E</color>
+    <color name="neko_dark_secondary_container">#9D4EDD</color>
+    <color name="neko_dark_on_secondary_container">#F8E8FF</color>
+    
+    <color name="neko_dark_tertiary">#F8E8FF</color>
+    <color name="neko_dark_on_tertiary">#2D1B2E</color>
+    <color name="neko_dark_tertiary_container">#E0AAFF</color>
+    <color name="neko_dark_on_tertiary_container">#1A0B2E</color>
+    
+    <color name="neko_dark_error">#FFB4AB</color>
+    <color name="neko_dark_error_container">#93000A</color>
+    <color name="neko_dark_on_error">#690005</color>
+    <color name="neko_dark_on_error_container">#FFDAD6</color>
+    
+    <color name="neko_dark_background">#10111C</color>
+    <color name="neko_dark_on_background">#E6E1E5</color>
+    <color name="neko_dark_surface">#10111C</color>
+    <color name="neko_dark_on_surface">#E6E1E5</color>
+    
+    <color name="neko_dark_surface_variant">#49454F</color>
+    <color name="neko_dark_on_surface_variant">#CAC4D0</color>
+    <color name="neko_dark_outline">#938F99</color>
+    <color name="neko_dark_inverse_on_surface">#1C1B1F</color>
+    <color name="neko_dark_inverse_surface">#E6E1E5</color>
+    <color name="neko_dark_inverse_primary">#7209B7</color>
+    
+    <!-- Special Neko colors -->
+    <color name="neko_accent">#FF6B9D</color>
+    <color name="neko_success">#4CAF50</color>
+    <color name="neko_warning">#FFC107</color>
+    <color name="neko_info">#2196F3</color>
+    
+    <!-- Transparency variations -->
+    <color name="neko_purple_10">#1A7209B7</color>
+    <color name="neko_purple_20">#337209B7</color>
+    <color name="neko_purple_30">#4D7209B7</color>
+    <color name="neko_purple_50">#807209B7</color>
+    <color name="neko_purple_70">#B37209B7</color>
+    <color name="neko_purple_90">#E67209B7</color>
+    
+    <color name="neko_pink_10">#1AE0AAFF</color>
+    <color name="neko_pink_20">#33E0AAFF</color>
+    <color name="neko_pink_30">#4DE0AAFF</color>
+    <color name="neko_pink_50">#80E0AAFF</color>
+    <color name="neko_pink_70">#B3E0AAFF</color>
+    <color name="neko_pink_90">#E6E0AAFF</color>
+    
+    <!-- Standard Android colors for compatibility -->
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="transparent">#00000000</color>
+    
+    <!-- Status colors -->
+    <color name="status_online">#4CAF50</color>
+    <color name="status_offline">#F44336</color>
+    <color name="status_loading">#FF9800</color>
+    <color name="status_warning">#FFC107</color>
+    
+</resources>

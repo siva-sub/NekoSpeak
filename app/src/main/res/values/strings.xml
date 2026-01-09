@@ -1,0 +1,154 @@
+<resources>
+    <!-- App Information -->
+    <string name="app_name">NekoSpeak</string>
+    <string name="app_description">Cat-powered offline text-to-speech with Kokoro and Kitten TTS</string>
+    
+    <string name="tts_default_lang">eng</string>
+    <string name="tts_default_country">USA</string>
+    <string name="tts_default_variant">default</string>
+    
+    <!-- TTS Service -->
+    <string name="tts_service_name">Neko Text-to-Speech</string>
+    <string name="tts_service_description">Offline TTS service with 54 languages and cat-themed voices</string>
+    
+    <!-- Main Screen -->
+    <string name="text_to_speech">Text to Speech</string>
+    <string name="enter_text_hint">Enter text to speak</string>
+    <string name="type_something_placeholder">Type something for Neko to say...</string>
+    <string name="current_voice">Current Voice</string>
+    <string name="speech_controls">Speech Controls</string>
+    <string name="speed">Speed</string>
+    <string name="quick_actions">Quick Actions</string>
+    <string name="test">Test</string>
+    <string name="clear">Clear</string>
+    <string name="speak">Speak</string>
+    <string name="speaking">Speaking...</string>
+    <string name="stop">Stop</string>
+    
+    <!-- Navigation -->
+    <string name="home">Home</string>
+    <string name="voices">Voices</string>
+    <string name="settings">Settings</string>
+    
+    <!-- Voice Categories -->
+    <string name="kitten_tts_voices">Kitten TTS Voices (25MB)</string>
+    <string name="kokoro_voices">Kokoro Voices (310MB) - %d Languages</string>
+    
+    <!-- Voice Characteristics -->
+    <string name="female">Female</string>
+    <string name="male">Male</string>
+    <string name="cheerful">Cheerful</string>
+    <string name="gentle">Gentle</string>
+    <string name="energetic">Energetic</string>
+    <string name="calm">Calm</string>
+    <string name="friendly">Friendly</string>
+    <string name="professional">Professional</string>
+    <string name="warm">Warm</string>
+    <string name="confident">Confident</string>
+    <string name="neutral">Neutral</string>
+    
+    <!-- Settings -->
+    <string name="engine_settings">Engine Settings</string>
+    <string name="process_text_integration">Process Text Integration</string>
+    <string name="process_text_description">Enable \'Read Aloud\' in text selection menu</string>
+    <string name="audio_settings">Audio Settings</string>
+    <string name="default_speed">Default Speed</string>
+    <string name="about_neko_tts">About Neko TTS</string>
+    <string name="about_description">A cat-themed offline TTS app combining the power of Kokoro (54 languages) and Kitten TTS (optimized English voices).</string>
+    <string name="version">Version</string>
+    <string name="models">Models</string>
+    <string name="voices_count">%d voices</string>
+    <string name="status">Status</string>
+    <string name="ready">Ready</string>
+    <string name="loading">Loading</string>
+    
+    <!-- Process Text -->
+    <string name="read_aloud">Read Aloud</string>
+    <string name="no_text_selected">No text selected</string>
+    <string name="reading_text">Reading text...</string>
+    <string name="initializing_tts">Initializing TTS...</string>
+    <string name="tts_init_failed">Failed to initialize TTS engine</string>
+    <string name="synthesis_error">Synthesis error: %s</string>
+    <string name="synthesis_failed">Speech synthesis failed</string>
+    <string name="processing_error">Processing error: %s</string>
+    
+    <!-- Status Messages -->
+    <string name="initializing_engines">Initializing TTS engines...</string>
+    <string name="first_launch_message">This may take a moment on first launch.</string>
+    <string name="engine_ready">TTS engine ready</string>
+    <string name="engine_error">TTS engine error</string>
+    
+    <!-- Error Messages -->
+    <string name="error_initialization">Failed to initialize TTS engine</string>
+    <string name="error_synthesis">Speech synthesis failed</string>
+    <string name="error_model_not_found">TTS model not found</string>
+    <string name="error_voice_not_found">Voice not found</string>
+    <string name="error_audio_playback">Audio playback failed</string>
+    <string name="error_network">Network error</string>
+    <string name="error_storage">Storage error</string>
+    <string name="error_permission">Permission denied</string>
+    
+    <!-- Success Messages -->
+    <string name="success_initialization">TTS engine initialized successfully</string>
+    <string name="success_synthesis">Speech synthesis completed</string>
+    <string name="success_export">Audio exported successfully</string>
+    
+    <!-- Test Messages -->
+    <string name="test_text_kitten">Hello! This is a test of the %s voice. How do I sound?</string>
+    <string name="test_text_kokoro">Hello! This is a test of the %s voice. I can speak in many languages.</string>
+    <string name="sample_text">Hello, this is Neko TTS speaking! I can read any text for you.</string>
+    
+    <!-- Accessibility -->
+    <string name="voice_selected">Voice selected</string>
+    <string name="expand">Expand</string>
+    <string name="collapse">Collapse</string>
+    <string name="play_audio">Play audio</string>
+    <string name="stop_audio">Stop audio</string>
+    <string name="increase_speed">Increase speed</string>
+    <string name="decrease_speed">Decrease speed</string>
+    
+    <!-- Notifications -->
+    <string name="tts_notification_title">Neko TTS</string>
+    <string name="tts_notification_content">Text-to-speech service running</string>
+    <string name="tts_channel_name">Neko TTS Service</string>
+    <string name="tts_channel_description">Notifications for Neko TTS service</string>
+    
+    <!-- File Operations -->
+    <string name="export_audio">Export Audio</string>
+    <string name="save_to_file">Save to file</string>
+    <string name="share_audio">Share Audio</string>
+    <string name="audio_exported">Audio exported to %s</string>
+    <string name="export_failed">Export failed</string>
+    
+    <!-- Language Names (Some examples) -->
+    <string name="language_en">English</string>
+    <string name="language_es">Spanish</string>
+    <string name="language_fr">French</string>
+    <string name="language_de">German</string>
+    <string name="language_it">Italian</string>
+    <string name="language_pt">Portuguese</string>
+    <string name="language_ru">Russian</string>
+    <string name="language_ja">Japanese</string>
+    <string name="language_ko">Korean</string>
+    <string name="language_zh">Chinese</string>
+    <string name="language_hi">Hindi</string>
+    <string name="language_ar">Arabic</string>
+    
+    <!-- Branding -->
+    <string name="neko_subtitle">Cat-powered voices</string>
+    <string name="powered_by_kokoro">Powered by Kokoro TTS</string>
+    <string name="powered_by_kitten">Powered by Kitten TTS</string>
+    
+    <!-- Empty States -->
+    <string name="no_voices_available">No voices available</string>
+    <string name="no_voices_description">TTS engine is not initialized or no voices are loaded</string>
+    <string name="initialize_engine">Initialize Engine</string>
+    
+    <!-- Dialogs -->
+    <string name="confirm_action">Confirm Action</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    
+</resources>
