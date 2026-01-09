@@ -21,7 +21,10 @@ class CheckVoiceData : Activity() {
         val availableVoices = arrayListOf(
             "eng-USA",
             "eng-GBR",
-            "eng-AUS"
+            "eng-AUS",
+            "eng-IND",
+            "eng-SGP",
+            "eng-CAN"
         )
         
         result.putStringArrayListExtra(

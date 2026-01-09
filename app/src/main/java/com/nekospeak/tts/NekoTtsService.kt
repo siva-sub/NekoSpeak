@@ -87,13 +87,24 @@ class NekoTtsService : TextToSpeechService() {
         
         if (!isEnglish) return TextToSpeech.LANG_NOT_SUPPORTED
         
-        val isUS = "USA".equals(country, ignoreCase = true) || "US".equals(country, ignoreCase = true) || country.isNullOrEmpty()
-        
-        return if (isUS) {
-            TextToSpeech.LANG_COUNTRY_AVAILABLE
-        } else {
-            TextToSpeech.LANG_AVAILABLE
+        // Return COUNTRY_AVAILABLE for ALL English variants to ensure "Play Sample" works
+        // for users in SG, IN, AU, etc. even if we fallback to US/UK models.
+        return TextToSpeech.LANG_COUNTRY_AVAILABLE
+    }
+    
+    override fun onGetDefaultVoiceNameFor(lang: String?, country: String?, variant: String?): String? {
+        val isEnglish = "eng".equals(lang, ignoreCase = true) || "en".equals(lang, ignoreCase = true)
+        if (isEnglish) {
+            // Return current preferred voice, or a safe default
+            // If the service isn't fully created, this might be tricky, but usually it is.
+            return try {
+                val prefs = com.nekospeak.tts.data.PrefsManager(this)
+                prefs.currentVoice
+            } catch (e: Exception) {
+                "af_heart"
+            }
         }
+        return super.onGetDefaultVoiceNameFor(lang, country, variant)
     }
     
     override fun onGetLanguage(): Array<String> {
