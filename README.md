@@ -1,6 +1,19 @@
-# NekoSpeak
+![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)
+[![PyPI Release](https://img.shields.io/pypi/v/kokoro-onnx.svg)](https://pypi.org/project/kokoro-onnx/)
+[![Github Model Releases](https://img.shields.io/github/v/release/thewh1teagle/kokoro-onnx)](https://github.com/thewh1teagle/kokoro-onnx/releases)
+[![License](https://img.shields.io/github/license/thewh1teagle/kokoro-onnx)](https://github.com/thewh1teagle/kokoro-onnx/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/thewh1teagle/kokoro-onnx?style=social)](https://github.com/thewh1teagle/kokoro-onnx/stargazers)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/kokoro-onnx?style=plastic)](https://pypi.org/project/kokoro-onnx/)
+[![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-%E2%89%A51.20.1-blue)](https://github.com/microsoft/onnxruntime)
+![CPU](https://img.shields.io/badge/CPU-supported-brightgreen)
+![GPU](https://img.shields.io/badge/GPU-supported-brightgreen)
 
-**NekoSpeak** is a private, on-device AI Text-to-Speech (TTS) engine for Android. It combines the expressive power of **Kokoro v1.0** with the lightning-fast efficiency of **Kitten TTS Nano** to provide a premium listening experience that respects your privacy.
+**NekoSpeak** is a private, on-device AI Text-to-Speech (TTS) engine for Android. It combines the expressive power of **Kokoro v1.0** with the lightning-fast efficiency of **Kitten TTS Nano**.
+
+## Author
+Developed by **Sivasubramanian Ramanathan**
+*   [LinkedIn](https://www.linkedin.com/in/sivasub987/)
+*   [Website](https://sivasub.com/)
 
 ## Features
 
@@ -16,35 +29,43 @@
 
 ## Architecture
 
-The following diagram illustrates the NekoSpeak processing pipeline:
+**NekoTtsService** vs **KokoroEngine**:
+*   **NekoTtsService**: The **Face** of the app. Handles Android TTS API requests, thread management, and audio streaming callbacks.
+*   **KokoroEngine**: The **Brain**. Handles Model/ONNX inference, Tokenization, and raw audio synthesis.
+
+### Kokoro Engine Pipeline
+The following diagram illustrates the internal processing of `KokoroEngine.kt`:
 
 ```mermaid
 graph TD
-    A[Input Text] --> B[Phonemizer.kt]
-    
-    subgraph Orchestrator [Phonemizer.kt Logic]
-        B --> C{Text Normalization}
-        C -->|Clean Text| D{Phonemization}
+    subgraph Service [NekoTtsService]
+        Req(Synthesis Request) -->|Text| Init{Initialized?}
+        Init -- No --> Err(Error)
+        Init -- Yes --> Gen[generate]
+    end
+
+    subgraph Engine [KokoroEngine]
+        Gen --> Split[Sentence Splitting]
+        Split -->|Sentence| G2P[Phonemizer]
         
-        subgraph G2P [Grapheme-to-Phoneme]
-            D -->|Primary| E[Misaki G2P]
-            D -->|Fallback| F[Espeak-NG]
+        subgraph Phonemization
+            G2P -->|G2P| Toks[Tokens]
+            Toks --> Limit{> MAX_TOKENS?}
+            Limit -- Yes --> Batch[Chunk & Batch]
+            Limit -- No --> Accum[Accumulate]
         end
+
+        Batch --> Inf[ONNX Inference]
+        Accum --> Inf
         
-        E --> G[Phonemes]
-        F --> G
-        G --> H[Tokenization]
+        subgraph ONNX [ONNX Runtime]
+            Inf -->|Tokens + Style + Speed| Sess{Run Session}
+            Sess -->|Raw Float| Audio[Audio Data]
+        end
     end
     
-    H -->|Token IDs| I{Model Inference}
-    
-    subgraph ONNX [ONNX Runtime]
-        I -->|Quality| J[Kokoro v1.0]
-        I -->|Speed| K[Kitten TTS Nano]
-    end
-    
-    J --> L[Audio Waveform]
-    K --> L
+    Audio -->|Callback| PCM[Float -> PCM16]
+    PCM -->|Stream| Output[Audio Track]
 ```
 
 ## Screenshots

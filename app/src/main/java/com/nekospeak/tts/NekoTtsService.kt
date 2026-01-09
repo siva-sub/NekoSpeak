@@ -79,15 +79,20 @@ class NekoTtsService : TextToSpeechService() {
     }
     
     override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int {
-        val locale = Locale(lang ?: "", country ?: "", variant ?: "")
+        if (lang.isNullOrEmpty()) return TextToSpeech.LANG_NOT_SUPPORTED
         
-        return when {
-            supportedLanguages.any { it.language == locale.language && it.country == locale.country } ->
-                TextToSpeech.LANG_COUNTRY_AVAILABLE
-            supportedLanguages.any { it.language == locale.language } ->
-                TextToSpeech.LANG_AVAILABLE
-            else ->
-                TextToSpeech.LANG_NOT_SUPPORTED
+        // Normalize input: Android settings often pass ISO3 ("eng", "USA")
+        // We match against our supported locales which are usually ISO2 ("en", "US")
+        val isEnglish = "eng".equals(lang, ignoreCase = true) || "en".equals(lang, ignoreCase = true)
+        
+        if (!isEnglish) return TextToSpeech.LANG_NOT_SUPPORTED
+        
+        val isUS = "USA".equals(country, ignoreCase = true) || "US".equals(country, ignoreCase = true) || country.isNullOrEmpty()
+        
+        return if (isUS) {
+            TextToSpeech.LANG_COUNTRY_AVAILABLE
+        } else {
+            TextToSpeech.LANG_AVAILABLE
         }
     }
     

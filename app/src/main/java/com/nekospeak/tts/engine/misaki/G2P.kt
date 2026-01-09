@@ -99,14 +99,38 @@ class G2P(private val lexicon: Lexicon, private val fallback: ((String) -> Strin
     }
     
     
+    private val NUMBER_REGEX = Pattern.compile("\\d+")
+
     private fun preprocess(text: String): Triple<String, List<String>, Map<Int, Any>> {
+        // 1. Remove Markdown Links [text](url) -> text
         val matcher = LINK_REGEX.matcher(text)
         val sb = StringBuffer()
         while(matcher.find()) {
              matcher.appendReplacement(sb, matcher.group(1) ?: "")
         }
         matcher.appendTail(sb)
-        return Triple(sb.toString(), emptyList(), emptyMap())
+        var processedText = sb.toString()
+        
+        // 2. Normalize Numbers -> Words
+        val numMatcher = NUMBER_REGEX.matcher(processedText)
+        val sbNum = StringBuffer()
+        while(numMatcher.find()) {
+             try {
+                 val numStr = numMatcher.group()
+                 // Avoid massive numbers
+                 if (numStr.length < 18) {
+                     val num = numStr.toLong()
+                     val words = com.nekospeak.tts.engine.misaki.Num2Words.convert(num)
+                     numMatcher.appendReplacement(sbNum, words)
+                 }
+             } catch (e: Exception) {
+                 // ignore conversion errors
+             }
+        }
+        numMatcher.appendTail(sbNum)
+        processedText = sbNum.toString()
+        
+        return Triple(processedText, emptyList(), emptyMap())
     }
     
     private fun retokenize(tokens: List<MToken>): List<MToken> {
