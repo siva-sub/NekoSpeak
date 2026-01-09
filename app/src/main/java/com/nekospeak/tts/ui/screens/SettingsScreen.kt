@@ -108,6 +108,34 @@ fun SettingsScreen(navController: NavController) {
                         valueRange = 1f..8f,
                         steps = 6
                     )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Speed Control (Kitten Only)
+                    if (currentModel == "kitten_nano") {
+                         var speed by remember { mutableFloatStateOf(prefs.speechSpeed) }
+                         
+                         Text("Speech Speed: ${String.format("%.1f", speed)}x", fontWeight = FontWeight.Medium)
+                         Text(
+                             "Adjust speaking rate for Kitten TTS.",
+                             style = MaterialTheme.typography.bodySmall,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                         )
+                         Slider(
+                             value = speed,
+                             onValueChange = { speed = it },
+                             onValueChangeFinished = { prefs.speechSpeed = speed },
+                             valueRange = 0.5f..2.0f,
+                             steps = 14 // 0.1 increments
+                         )
+                    } else {
+                        Text("Speech Speed", fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                         Text(
+                             "Fixed at 1.0x for Kokoro v1.0 (Standard Model).",
+                             style = MaterialTheme.typography.bodySmall,
+                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                         )
+                    }
                 }
             }
             

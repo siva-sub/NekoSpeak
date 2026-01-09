@@ -248,6 +248,18 @@ class KokoroEngine(private val context: Context) : TtsEngine {
             }
             val numVectors = voiceData.size / STYLE_DIM
             
+            // Speed Logic
+            val isKitten = currentModelInfo.first.contains("kitten")
+            val prefs = com.nekospeak.tts.data.PrefsManager(context)
+            
+            // If Kitten, use Prefs speed (ignoring system request 'speed' param if user preference exists? 
+            // Or combine them? User prompt implies UI control for Kitten.
+            // Let's use the UI setting preferentially for Kitten.
+            // For Kokoro, force 1.0.
+            val finalSpeed = if (isKitten) prefs.speechSpeed else 1.0f
+            
+            Log.d(TAG, "Generating with Speed: $finalSpeed (Model: ${if(isKitten) "Kitten" else "Kokoro"})")
+            
             // Batching logic: Accumulate tokens to fill context window (MAX_TOKENS)
             val currentBatchTokens = ArrayList<Int>()
             var isFirstBatch = true
@@ -266,7 +278,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                 // PERFORMANCE FIX: Immediate flush for first sentence
                 if (isFirstBatch) {
                     val startInf = System.currentTimeMillis()
-                    processBatch(tokens, env, session, voiceData, numVectors, speed, useIntSpeed, startInf, callback)
+                    processBatch(tokens, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
                     Log.d(TAG, "First batch inference: ${System.currentTimeMillis() - startInf}ms")
                     isFirstBatch = false
                     continue
@@ -276,7 +288,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                 if (currentBatchTokens.size + tokens.size > MAX_TOKENS - 2) { // -2 for start/end tokens
                     // Process accumulated batch
                     val startInf = System.currentTimeMillis()
-                    processBatch(currentBatchTokens, env, session, voiceData, numVectors, speed, useIntSpeed, startInf, callback)
+                    processBatch(currentBatchTokens, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
                     Log.d(TAG, "Batch inference: ${System.currentTimeMillis() - startInf}ms")
                     currentBatchTokens.clear()
                 }
@@ -288,7 +300,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                          // Double check cancellation
                          if (!isActive) break
                          val startInf = System.currentTimeMillis()
-                         processBatch(chunk, env, session, voiceData, numVectors, speed, useIntSpeed, startInf, callback)
+                         processBatch(chunk, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
                      }
                 } else {
                     // Normal case: append to buffer
@@ -302,7 +314,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
             // Process remaining
             if (currentBatchTokens.isNotEmpty() && isActive) {
                 val startInf = System.currentTimeMillis()
-                processBatch(currentBatchTokens, env, session, voiceData, numVectors, speed, useIntSpeed, startInf, callback)
+                processBatch(currentBatchTokens, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
             }
             
         } catch (e: Exception) {
@@ -332,6 +344,12 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         startTime: Long,
         callback: (FloatArray) -> Unit
     ) {
+        // Enforce Speed Logic
+        // PrefsManager instance needed to read user preference for Kitten? 
+        // passing 'speed' argument comes from generate() which calls this.
+        // So logic should be in generate(). But processBatch receives 'speed'.
+        // Let's assume 'speed' passed here is already the correct one.
+        
         val paddedTokens = LongArray(tokens.size + 2)
         paddedTokens[0] = 0
         tokens.forEachIndexed { i, t -> paddedTokens[i + 1] = t.toLong() }
@@ -366,13 +384,26 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         floatBuffer.get(audioData)
         
         val genTimeMs = System.currentTimeMillis() - startTime
-        val audioDurationSec = audioData.size.toFloat() / SAMPLE_RATE
+        
+        // Model Specific Trimming (Robustness for Kitten Nano)
+        val finalAudio = if (currentModelInfo.first.contains("kitten")) {
+            // Trim 5000 from start, 10000 from end if size allows
+            if (audioData.size > 15000) {
+                audioData.sliceArray(5000 until (audioData.size - 10000))
+            } else {
+                audioData // Too small to trim safely
+            }
+        } else {
+            audioData
+        }
+        
+        val audioDurationSec = finalAudio.size.toFloat() / SAMPLE_RATE
         val rtf = genTimeMs / (audioDurationSec * 1000f)
         
-        Log.d(TAG, "Batch Processed: ${tokens.size} tokens -> ${audioDurationSec}s audio in ${genTimeMs}ms (RTF: $rtf)")
+        Log.d(TAG, "Batch Processed: ${tokens.size} tokens -> ${audioDurationSec}s (Trimmed from ${audioData.size}) in ${genTimeMs}ms")
         
-        // STREAMING: Callback immediately
-        callback(audioData)
+        // STREAMING: Callback
+        callback(finalAudio)
         
         inputIdsTensor.close()
         styleTensor.close()
