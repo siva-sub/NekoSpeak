@@ -63,7 +63,7 @@ This project stands on the shoulders of giants. We gratefully acknowledge the fo
 *   **[Kitten TTS Nano Model](https://huggingface.co/KittenML/kitten-tts-nano-0.1)** (Apache 2.0)
     *   The 0.1 Nano model provides the speed and efficiency backbone of this app.
 *   **[Kokoro-ONNX](https://github.com/thewh1teagle/kokoro-onnx)** (Apache 2.0)
-    *   Reference implementation for running Kokoro models via ONNX Runtime. Special thanks to @thewh1teagle for the inspiration and reference implementation.
+    *   Reference implementation for running Kokoro models via ONNX Runtime. **Huge thanks** to [thewh1teagle](https://github.com/thewh1teagle) for the inspiration and the amazing work on the ONNX export.
 *   **[Misaki](https://github.com/hexgrad/misaki)**
     *   G2P (Grapheme-to-Phoneme) logic was ported from this excellent library.
 *   **[Espeak-NG](https://github.com/espeak-ng/espeak-ng)** (GPL 3.0)
