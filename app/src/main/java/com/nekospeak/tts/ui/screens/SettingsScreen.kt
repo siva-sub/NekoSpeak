@@ -93,8 +93,13 @@ fun SettingsScreen(navController: NavController) {
             
             Divider()
             
+
+            
+            Divider()
+            
             SettingsSection(title = "Performance") {
                 Column(Modifier.padding(horizontal = 16.dp)) {
+                    // CPU Threads
                     Text("CPU Threads: ${threads.toInt()}", fontWeight = FontWeight.Medium)
                     Text(
                         "More threads = faster. Excessive threads may cause throttling.",
@@ -107,6 +112,60 @@ fun SettingsScreen(navController: NavController) {
                         onValueChangeFinished = { prefs.cpuThreads = threads.toInt() },
                         valueRange = 1f..8f,
                         steps = 6
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Streaming Optimization (Token Size)
+                    var tokenSize by remember { mutableIntStateOf(prefs.streamTokenSize) }
+                    val displayTokenSize = if (tokenSize == 0) "Auto" else tokenSize.toString()
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Stream Buffer: $displayTokenSize tokens", fontWeight = FontWeight.Medium)
+                            Text(
+                                "Lower = lower latency (faster start). Higher = more stable.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (tokenSize > 0 && tokenSize < 50) {
+                                Text(
+                                    "Warning: Very low values may cause crashes on some devices!",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            if (currentModel == "kitten_nano" && tokenSize > 0 && tokenSize > 300) {
+                                Text(
+                                    "Warning: High values (>300) may cause crashes with Kitten TTS!",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = { 
+                                tokenSize = 0 
+                                prefs.streamTokenSize = 0
+                            },
+                            enabled = tokenSize != 0
+                        ) {
+                            Text("Reset")
+                        }
+                    }
+                    
+                    Slider(
+                        value = if (tokenSize == 0) 50f else tokenSize.toFloat(),
+                        onValueChange = { tokenSize = it.toInt() },
+                        onValueChangeFinished = { prefs.streamTokenSize = tokenSize },
+                        valueRange = 10f..500f,
+                        steps = 48 
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -178,7 +237,7 @@ fun SettingsScreen(navController: NavController) {
             SettingsSection(title = "About") {
                 SettingsItem(
                     title = "NekoSpeak TTS",
-                    subtitle = "Version 1.0.0",
+                    subtitle = "Version 1.0.2",
                     icon = Icons.Default.Info,
                     onClick = { }
                 )

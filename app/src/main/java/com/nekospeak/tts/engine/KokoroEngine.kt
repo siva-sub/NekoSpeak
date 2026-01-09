@@ -23,7 +23,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
     companion object {
         private const val TAG = "KokoroEngine"
         const val SAMPLE_RATE = 24000
-        const val MAX_TOKENS = 250 // Reduced to prevent long pauses
+        const val MAX_TOKENS = 50 // Reduced from 250 to 50 to improve latency on slow devices
         const val STYLE_DIM = 256
         
         // Kokoro Assets
@@ -133,8 +133,8 @@ class KokoroEngine(private val context: Context) : TtsEngine {
             
             initialized = true
             true
-        } catch (e: Exception) {
-            Log.e(TAG, "Init failed", e)
+        } catch (e: Throwable) {
+            Log.e(TAG, "Init CRITICAL FAILURE", e)
             e.printStackTrace()
             false
         }
@@ -284,8 +284,19 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                     continue
                 }
                 
+                // Determine MAX_TOKENS based on preferences or model defaults
+                val prefTokenSize = prefs.streamTokenSize
+                val currentMaxTokens = if (prefTokenSize > 0) {
+                    prefTokenSize
+                } else {
+                    // Auto: 50 for Kokoro (Faster start), 300 for Kitten (Safety)
+                    if (currentModelInfo.first.contains("kitten")) 300 else 50
+                }
+                
+                Log.v(TAG, "Streaming chunk size: $currentMaxTokens tokens")
+                
                 // If adding these tokens exceeds limit, process current batch first
-                if (currentBatchTokens.size + tokens.size > MAX_TOKENS - 2) { // -2 for start/end tokens
+                if (currentBatchTokens.size + tokens.size > currentMaxTokens - 2) { // -2 for start/end tokens
                     // Process accumulated batch
                     val startInf = System.currentTimeMillis()
                     processBatch(currentBatchTokens, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
@@ -294,8 +305,8 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                 }
                 
                 // If valid single sentence is HUGE (larger than max), strictly chunk it
-                if (tokens.size > MAX_TOKENS - 2) {
-                     val chunks = tokens.chunked(MAX_TOKENS - 2)
+                if (tokens.size > currentMaxTokens - 2) {
+                     val chunks = tokens.chunked(currentMaxTokens - 2)
                      for (chunk in chunks) {
                          // Double check cancellation
                          if (!isActive) break
@@ -387,9 +398,14 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         
         // Model Specific Trimming (Robustness for Kitten Nano)
         val finalAudio = if (currentModelInfo.first.contains("kitten")) {
-            // Trim 5000 from start, 10000 from end if size allows
-            if (audioData.size > 15000) {
-                audioData.sliceArray(5000 until (audioData.size - 10000))
+            // Trim reduced to prevent cutting off short words (Misaki G2P output is tighter than Espeak)
+            // Was [5000, 10000], now [3000, 4000]
+            val trimStart = 3000
+            val trimEnd = 4000
+            val minLen = trimStart + trimEnd + 2400 // At least 0.1s audio left
+            
+            if (audioData.size > minLen) {
+                audioData.sliceArray(trimStart until (audioData.size - trimEnd))
             } else {
                 audioData // Too small to trim safely
             }

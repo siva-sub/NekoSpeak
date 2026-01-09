@@ -36,25 +36,9 @@ class NekoTtsService : TextToSpeechService() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     @Volatile private var currentEngine: TtsEngine? = null
     @Volatile private var stopRequested = false
-
-    private val initJob = serviceScope.async {
-        try {
-            Log.i(TAG, "Starting engine initialization...")
-            val engine = KokoroEngine(this@NekoTtsService)
-            if (engine.initialize()) {
-                Log.i(TAG, "Kokoro engine initialized successfully")
-                currentEngine = engine
-                engine
-            } else {
-                Log.e(TAG, "Failed to initialize Kokoro engine")
-                null
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error initializing engine", e)
-            null
-        }
-    }
     
+    private var initJob: kotlinx.coroutines.Deferred<TtsEngine?>? = null
+
     // Supported languages (English for now)
     private val supportedLanguages = listOf(
         Locale.US,
@@ -66,41 +50,70 @@ class NekoTtsService : TextToSpeechService() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "NekoTtsService created")
-        // initJob starts automatically
+        
+        // Start init loop
+        initJob = serviceScope.async(Dispatchers.IO) {
+            Log.i(TAG, "Starting engine initialization (Async Job)...")
+            try {
+                // Use applicationContext safely here as onCreate has been called
+                val engine = KokoroEngine(applicationContext)
+                Log.i(TAG, "Created KokoroEngine instance. calling initialize()...")
+                if (engine.initialize()) {
+                     Log.i(TAG, "Kokoro engine initialized successfully")
+                     engine
+                } else {
+                     Log.e(TAG, "Kokoro engine initialization returned FALSE")
+                     engine
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "CRITICAL: InitJob crashed", t)
+                throw t
+            }
+        }
     }
     
     override fun onDestroy() {
         super.onDestroy()
-        if (initJob.isCompleted) {
-             runBlocking { initJob.await()?.release() }
+        val job = initJob
+        if (job != null && job.isCompleted) {
+             runBlocking { job.await()?.release() }
         }
         serviceScope.cancel()
         Log.i(TAG, "NekoTtsService destroyed")
     }
     
     override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int {
+        Log.d(TAG, "onIsLanguageAvailable check: $lang-$country-$variant")
         if (lang.isNullOrEmpty()) return TextToSpeech.LANG_NOT_SUPPORTED
         
         // Normalize input: Android settings often pass ISO3 ("eng", "USA")
         // We match against our supported locales which are usually ISO2 ("en", "US")
         val isEnglish = "eng".equals(lang, ignoreCase = true) || "en".equals(lang, ignoreCase = true)
         
-        if (!isEnglish) return TextToSpeech.LANG_NOT_SUPPORTED
+        if (!isEnglish) {
+             Log.d(TAG, "Language NOT supported: $lang")
+             return TextToSpeech.LANG_NOT_SUPPORTED
+        }
         
         // Return COUNTRY_AVAILABLE for ALL English variants to ensure "Play Sample" works
         // for users in SG, IN, AU, etc. even if we fallback to US/UK models.
+        Log.d(TAG, "Language supported (Generic English): $lang-$country")
         return TextToSpeech.LANG_COUNTRY_AVAILABLE
     }
     
     override fun onGetDefaultVoiceNameFor(lang: String?, country: String?, variant: String?): String? {
+        Log.d(TAG, "onGetDefaultVoiceNameFor: $lang-$country-$variant")
         val isEnglish = "eng".equals(lang, ignoreCase = true) || "en".equals(lang, ignoreCase = true)
         if (isEnglish) {
             // Return current preferred voice, or a safe default
             // If the service isn't fully created, this might be tricky, but usually it is.
             return try {
                 val prefs = com.nekospeak.tts.data.PrefsManager(this)
-                prefs.currentVoice
+                val voice = prefs.currentVoice
+                Log.d(TAG, "Returning default voice: $voice")
+                voice
             } catch (e: Exception) {
+                Log.e(TAG, "Error getting default voice", e)
                 "af_heart"
             }
         }
@@ -108,11 +121,18 @@ class NekoTtsService : TextToSpeechService() {
     }
     
     override fun onGetLanguage(): Array<String> {
+        // This is called when the system wants to know what is currently loaded.
+        // We should probably return what they asked for if we support it?
+        // Or return a safe default like eng-USA.
+        Log.d(TAG, "onGetLanguage called")
         return arrayOf("eng", "USA", "")
     }
     
     override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int {
-        return onIsLanguageAvailable(lang, country, variant)
+        Log.d(TAG, "onLoadLanguage: $lang-$country-$variant")
+        val result = onIsLanguageAvailable(lang, country, variant)
+        Log.d(TAG, "onLoadLanguage result: $result")
+        return result
     }
     
     override fun onStop() {
@@ -122,29 +142,41 @@ class NekoTtsService : TextToSpeechService() {
     
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         val text = request.charSequenceText?.toString() ?: return
+        val reqId = System.identityHashCode(request)
+        
+        Log.i(TAG, "[$reqId] onSynthesizeText received. Length: ${text.length} chars")
+        Log.v(TAG, "[$reqId] Text: ${text.take(100)}...")
         
         stopRequested = false
         
         if (text.isBlank()) {
+            Log.i(TAG, "[$reqId] Text is blank, done.")
             callback.done()
             return
         }
         
         // Wait for engine init (max 15 seconds)
+        // Wait for engine init (max 30 seconds)
         val engine = runBlocking {
             try {
                 // Wait for init to complete
-                kotlinx.coroutines.withTimeoutOrNull(15000) { 
-                    initJob.await() 
+                val job = initJob
+                if (job == null) {
+                    Log.e(TAG, "[$reqId] InitJob is null!")
+                    return@runBlocking null
+                }
+                
+                kotlinx.coroutines.withTimeoutOrNull(30000) { 
+                    job.await() 
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Timeout waiting for engine init", e)
+                Log.e(TAG, "[$reqId] Timeout waiting for engine init", e)
                 null
             }
         }
 
         if (engine == null || !engine.isInitialized()) {
-            Log.e(TAG, "Engine not initialized after wait")
+            Log.e(TAG, "[$reqId] Engine not initialized after wait")
             callback.error()
             return
         }
@@ -152,24 +184,19 @@ class NekoTtsService : TextToSpeechService() {
         // Get speech parameters
         val speechRate = request.speechRate / 100f  // Convert from percentage
         
-        // Determine voice to use
-        // Determine voice to use
-        // 1. Try requested voice (if valid)
-        // 2. Try saved voice preference
-        // 3. Fallback to default (engine handles null)
+        // Determine voice
         val requestedVoice = if (android.os.Build.VERSION.SDK_INT >= 21) request.voiceName else null
         val availableVoices = engine.getVoices()
         
         val voiceToUse = if (requestedVoice != null && availableVoices.contains(requestedVoice)) {
             requestedVoice
         } else {
-            // Fallback to saved preference
             val prefs = com.nekospeak.tts.data.PrefsManager(this)
             val savedVoice = prefs.currentVoice
             if (availableVoices.contains(savedVoice)) savedVoice else null
         }
         
-        Log.d(TAG, "Synthesizing: '$text' (rate=$speechRate, voice=$voiceToUse)")
+        Log.i(TAG, "[$reqId] Starting synthesis. Voice: $voiceToUse, Rate: $speechRate")
         
         // Start audio stream
         callback.start(
@@ -186,7 +213,10 @@ class NekoTtsService : TextToSpeechService() {
                     speed = speechRate.coerceIn(0.5f, 2.0f),
                     voice = voiceToUse
                 ) { samples ->
-                    if (stopRequested) return@generate
+                    if (stopRequested) {
+                        Log.i(TAG, "[$reqId] Stop requested during generation")
+                        return@generate
+                    }
                     
                     // Convert float samples to PCM 16-bit bytes
                     val bytes = floatToPcm16(samples)
@@ -197,19 +227,26 @@ class NekoTtsService : TextToSpeechService() {
                     while (offset < bytes.size) {
                         if (stopRequested) return@generate
                         val bytesToWrite = minOf(maxBufferSize, bytes.size - offset)
-                        callback.audioAvailable(bytes, offset, bytesToWrite)
+                        val ret = callback.audioAvailable(bytes, offset, bytesToWrite)
+                        if (ret == TextToSpeech.ERROR) {
+                             Log.w(TAG, "[$reqId] audioAvailable returned ERROR, stopping")
+                             stopRequested = true
+                             return@generate
+                        }
                         offset += bytesToWrite
                     }
                 }
-                // Log total bytes? We can't easily here without a var
-                // But we can trust if it works.
             }
             
-            callback.done()
-            Log.d(TAG, "Synthesis complete")
+            if (!stopRequested) {
+                callback.done()
+                Log.i(TAG, "[$reqId] Synthesis complete successfully")
+            } else {
+                Log.i(TAG, "[$reqId] Synthesis stopped")
+            }
             
         } catch (e: Exception) {
-            Log.e(TAG, "Synthesis error", e)
+            Log.e(TAG, "[$reqId] Synthesis error", e)
             callback.error()
         }
     }

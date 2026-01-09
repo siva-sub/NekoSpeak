@@ -12,6 +12,7 @@ class PrefsManager(context: Context) {
         private const val KEY_MODEL = "current_model"
         private const val KEY_THREADS = "cpu_threads"
         private const val KEY_SPEED = "speech_speed"
+        private const val KEY_TOKEN_SIZE = "stream_token_size"
         private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
         private const val KEY_THEME = "app_theme" // "dark", "light", "system"
     }
@@ -31,6 +32,10 @@ class PrefsManager(context: Context) {
     var speechSpeed: Float
         get() = prefs.getFloat(KEY_SPEED, 1.0f)
         set(value) = prefs.edit().putFloat(KEY_SPEED, value).apply()
+
+    var streamTokenSize: Int
+        get() = prefs.getInt(KEY_TOKEN_SIZE, 0)
+        set(value) = prefs.edit().putInt(KEY_TOKEN_SIZE, value).apply()
 
     var isOnboardingComplete: Boolean
         get() = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
