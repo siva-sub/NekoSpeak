@@ -9,6 +9,15 @@
 
 **NekoSpeak** is a private, on-device AI Text-to-Speech (TTS) engine for Android. It combines the expressive power of **Kokoro v1.0** with the lightning-fast efficiency of **Kitten TTS Nano**.
 
+<p align="center">
+  <img src="screenshot_voices.png" width="250" alt="Voice Selection">
+  <img src="screenshot_settings.png" width="250" alt="Settings Screen">
+</p>
+
+### 📥 Download
+The fully compiled **APK (arm64-v8a)** is available for download in Releases.
+[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.2)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
+
 ## Author
 Developed by **Sivasubramanian Ramanathan**
 *   [LinkedIn](https://www.linkedin.com/in/sivasub987/)
@@ -111,12 +120,7 @@ How does **Kokoro/Kitten** actually "speak"?
 *   **Output**:
     *   `audio`: A raw waveform array (Float32). Unlike older TTS which produced Mel Spectrograms requiring a separate Vocoder (HiFiGAN), Kokoro is **End-to-End**, outputting audio directly.
 
-## Screenshots
 
-<p align="center">
-  <img src="screenshot_voices.png" width="250" alt="Voice Selection">
-  <img src="screenshot_settings.png" width="250" alt="Settings Screen">
-</p>
 
 ## Credits & Acknowledgements
 
