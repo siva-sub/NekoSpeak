@@ -5,6 +5,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/siva-sub/NekoSpeak?style=social)](https://github.com/siva-sub/NekoSpeak/stargazers)
 ![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.18.0-blue)
 ![CPU](https://img.shields.io/badge/CPU-supported-brightgreen)
+[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.2)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
 
 
 **NekoSpeak** is a private, on-device AI Text-to-Speech (TTS) engine for Android. It combines the expressive power of **Kokoro v1.0** with the lightning-fast efficiency of **Kitten TTS Nano**.
@@ -16,7 +17,7 @@
 
 ### 📥 Download
 The fully compiled **APK (arm64-v8a)** is available for download in Releases.
-[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.2)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
+> **Note**: For `armv7` (32-bit) devices, you must compile from source.
 
 ## Author
 Developed by **Sivasubramanian Ramanathan**
