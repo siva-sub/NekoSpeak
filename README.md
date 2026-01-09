@@ -34,40 +34,82 @@ Developed by **Sivasubramanian Ramanathan**
 *   **NekoTtsService**: The **Face** of the app. Handles Android TTS API requests, thread management, and audio streaming callbacks.
 *   **KokoroEngine**: The **Brain**. Handles Model/ONNX inference, Tokenization, and raw audio synthesis.
 
-### Kokoro Engine Pipeline
-The following diagram illustrates the internal processing of `KokoroEngine.kt`:
+### Technical Deep Dive: From Text to Audio
 
+The core of NekoSpeak is a pipeline that transforms raw text into synthesized audio. This process involves several critical stages, each handled by specific components.
+
+#### 1. Why Preprocess?
+Raw text cannot be fed directly into a neural network. It must first be converted into a sequence of **Phonemes** (the distinct units of sound) and then mapped to **Tokens** (integer IDs).
+*   **Text**: "Hello"
+*   **Phonemes**: `h`, `ə`, `l`, `oʊ`
+*   **Tokens**: `[24, 83, 28, 57]`
+
+Preprocessing ensures the model "pronounces" words correctly, regardless of their spelling (e.g., "rough" vs "dough").
+
+#### 2. The Inference Pipeline
+
+The following diagram illustrates the exact data flow through the application:
 ```mermaid
 graph TD
-    subgraph Service [NekoTtsService]
-        Req(Synthesis Request) -->|Text| Init{Initialized?}
-        Init -- No --> Err(Error)
-        Init -- Yes --> Gen[generate]
-    end
-
-    subgraph Engine [KokoroEngine]
-        Gen --> Split[Sentence Splitting]
-        Split -->|Sentence| G2P[Phonemizer]
+    subgraph Input [Input Processing]
+        RawText["Raw Text (String)"] -->|NekoTtsService| Split{Sentence Splitter}
+        Split -->|Sentence Chunk| P[Phonemizer.kt]
         
-        subgraph Phonemization
-            G2P -->|G2P| Toks[Tokens]
-            Toks --> Limit{> MAX_TOKENS?}
-            Limit -- Yes --> Batch[Chunk & Batch]
-            Limit -- No --> Accum[Accumulate]
-        end
-
-        Batch --> Inf[ONNX Inference]
-        Accum --> Inf
-        
-        subgraph ONNX [ONNX Runtime]
-            Inf -->|Tokens + Style + Speed| Sess{Run Session}
-            Sess -->|Raw Float| Audio[Audio Data]
+        subgraph P [Phonemization Layer]
+            direction TB
+            Norm[Normalization] -->|Num2Words| CleanText
+            CleanText -->|G2P / EspeakWrapper| Phonemes
+            Phonemes -->|Vocabulary Map| Tokens["Tokens (Int Array)"]
         end
     end
-    
-    Audio -->|Callback| PCM[Float -> PCM16]
-    PCM -->|Stream| Output[Audio Track]
+
+    subgraph Core [Kokoro Engine Core]
+        Tokens -->|Batching| Inputs{Model Inputs}
+        VoiceFile["Voice Style (.npy)"] -->|Load FloatArray| Style["Style Vector (1x256)"]
+        SpeedParam["Speed (Float)"] -->|User Prefs| Speed["Speed Tensor"]
+        
+        Inputs -->|Tokens + Style + Speed| ONNX[ONNX Runtime Session]
+    end
+
+    subgraph Output [Audio Synthesis]
+        ONNX -->|Inference| MelSpec[Implicit Mel Spectrogram]
+        MelSpec -->|Vocoder| FloatAudio["Raw Audio (Float32)"]
+        FloatAudio -->|Callback| PCM["PCM 16-bit Converter"]
+        PCM -->|Byte Stream| AudioTrack[Android AudioTrack]
+    end
+
+    P --> Core
+    Core --> Output
 ```
+
+#### 3. Component Breakdown
+
+*   **`NekoTtsService.kt`**:
+    *   **Role**: Application Entry Point.
+    *   **Responsibility**: Receives `SynthesisRequest` from Android. Manages the lifecycle of the engine. Buffer exact bytes to the system `AudioTrack`.
+*   **`KokoroEngine.kt`**:
+    *   **Role**: Result Orchestrator.
+    *   **Flow**:
+        1.  **Splitting**: Breaks large paragraphs into sentences to fit context windows.
+        2.  **Batching**: Accumulates tokens until `MAX_TOKENS` is reached to maximize inference efficiency.
+        3.  **Trimming**: (Kitten specific) Trims silence from generated audio to prevent "robotic" pauses.
+*   **`Phonemizer.kt` & `EspeakWrapper.kt`**:
+    *   **Role**: Linguistic Processor.
+    *   **Process**:
+        *   **`Misaki G2P`**: Primary engine. Uses a rule-based system + lexicon for high-speed American/British English phonemization.
+        *   **`EspeakWrapper`**: Native JNI fallback. If Misaki fails or a non-English word is encountered, Espeak provides robust phoneme generation.
+*   **`TtsEngine.kt`**:
+    *   **Role**: System Interface. Defines the contract (`initialize`, `generate`, `release`) for interchangeable backends.
+
+#### 4. ONNX Model Internals
+
+How does **Kokoro/Kitten** actually "speak"?
+*   **Inputs**:
+    *   `tokens`: The sequence of phoneme IDs (Shape: `[1, N]`).
+    *   `style`: A fixed-size embedding vector (Shape: `[1, 256]`) representing the voice's timber (e.g., pitch, resonance). This is chopped from the giant `voices.bin` file.
+    *   `speed`: A scalar controlling the duration of phonemes.
+*   **Output**:
+    *   `audio`: A raw waveform array (Float32). Unlike older TTS which produced Mel Spectrograms requiring a separate Vocoder (HiFiGAN), Kokoro is **End-to-End**, outputting audio directly.
 
 ## Screenshots
 
