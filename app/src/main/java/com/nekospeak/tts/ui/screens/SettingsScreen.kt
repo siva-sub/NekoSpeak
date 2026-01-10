@@ -237,7 +237,7 @@ fun SettingsScreen(navController: NavController) {
             SettingsSection(title = "About") {
                 SettingsItem(
                     title = "NekoSpeak TTS",
-                    subtitle = "Version 1.0.2",
+                    subtitle = "Version ${com.nekospeak.tts.BuildConfig.VERSION_NAME}",
                     icon = Icons.Default.Info,
                     onClick = { }
                 )
