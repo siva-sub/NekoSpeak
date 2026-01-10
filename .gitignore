@@ -13,3 +13,9 @@
 **/*.apk
 app/src/main/assets/kokoro/
 app/src/main/assets/kitten/
+
+# IDE and Temp
+.vscode/
+.kotlin/
+.idea/
+*.log
