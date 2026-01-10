@@ -5,8 +5,8 @@ class EspeakWrapper {
         init {
             try {
                 System.loadLibrary("nekospeak")
-            } catch (e: Exception) {
-                e.printStackTrace()
+            } catch (t: Throwable) {
+                t.printStackTrace()
             }
         }
     }
