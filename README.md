@@ -127,6 +127,25 @@ How does **Kokoro/Kitten** actually "speak"?
 
 
 
+
+### 📂 Project Structure
+```text
+.
+├── app
+│   ├── src
+│   │   ├── main
+│   │   │   ├── java/com/nekospeak/tts  (Kotlin Source)
+│   │   │   ├── cpp/                    (Native C++ / JNI)
+│   │   │   ├── assets/                 (Model & Voice Data)
+│   │   │   └── res/                    (UI Resources)
+│   ├── build.gradle.kts                (App Build Config)
+├── gradle                              (Gradle Wrapper)
+├── build.gradle.kts                    (Root Build Config)
+├── settings.gradle.kts                 (Project Settings)
+├── README.md                           (Documentation)
+└── LICENSE                             (MIT License)
+```
+
 ## Credits & Acknowledgements
 
 This project stands on the shoulders of giants. We gratefully acknowledge the following open-source projects:
