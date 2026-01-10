@@ -118,13 +118,27 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
         }
         
         viewModelScope.launch {
+            // Validate selected voice
+            val currentVoiceId = prefs.currentVoice
+            val isValid = allVoices.any { it.id == currentVoiceId }
+            
+            val voiceToSelect = if (isValid) {
+                currentVoiceId
+            } else {
+                // Determine sensible default
+                val defaultId = if (prefs.currentModel == "kitten_nano") "expr-voice-2-f" else "af_heart"
+                // Update persistent storage
+                prefs.currentVoice = defaultId
+                defaultId
+            }
+            
             _uiState.update { 
                 it.copy(
                     isLoading = false, 
                     voices = allVoices,
                     // filteredVoices will be updated by applyFilters
                     availableLanguages = allVoices.map { v -> v.language }.distinct().sorted(),
-                    selectedVoiceId = prefs.currentVoice
+                    selectedVoiceId = voiceToSelect
                 ) 
             }
             applyFilters()
