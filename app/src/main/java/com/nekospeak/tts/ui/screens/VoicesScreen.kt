@@ -3,6 +3,7 @@ package com.nekospeak.tts.ui.screens
 import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,7 +39,12 @@ fun VoicesScreen(
     
     // Test Speech State
     var testText by remember { mutableStateOf("Hello, I am NekoSpeak.") }
+    var speechRate by remember { mutableFloatStateOf(1.0f) }
     var tts: TextToSpeech? by remember { mutableStateOf(null) }
+    var showLanguageModal by remember { mutableStateOf(false) }
+    var showRegionModal by remember { mutableStateOf(false) }
+    var showGenderModal by remember { mutableStateOf(false) }
+    var showQualityModal by remember { mutableStateOf(false) }
     
     DisposableEffect(Unit) {
         // Explicitly use our own engine package to ensure we test NekoSpeak
@@ -56,7 +62,9 @@ fun VoicesScreen(
     // Sync ViewModel selection with Prefs
     LaunchedEffect(uiState.selectedVoiceId) {
         uiState.selectedVoiceId?.let { 
-             prefs.currentVoice = it 
+             prefs.currentVoice = it
+             // Auto-update test text based on language
+             testText = viewModel.getSampleTextForVoice(it)
         }
     }
     
@@ -108,6 +116,21 @@ fun VoicesScreen(
                              val voiceId = uiState.selectedVoiceId ?: prefs.currentVoice
                              val params = android.os.Bundle()
                              params.putString("voiceName", voiceId)
+                             
+                             // Graceful recovery: stop, and if isSpeaking was true after stop, recreate TTS
+                             val wasSpeaking = tts?.isSpeaking == true
+                             tts?.stop()
+                             
+                             // If TTS was stuck or in an error state, recreate it
+                             if (wasSpeaking) {
+                                 // Give a brief moment for stop to take effect
+                                 tts?.shutdown()
+                                 tts = TextToSpeech(context, { _ -> }, "com.nekospeak.tts")
+                             }
+                             
+                             // Set the speech rate from preferences
+                             tts?.setSpeechRate(prefs.speechSpeed)
+                             
                              tts?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test_id")
                         },
                         containerColor = MaterialTheme.colorScheme.primary
@@ -143,57 +166,52 @@ fun VoicesScreen(
                 shape = RoundedCornerShape(12.dp)
             )
             
-            // Visible Filters (LazyRow)
-            androidx.compose.foundation.lazy.LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(bottom = 8.dp)
+            // Filters Row
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item {
+                // Region Filter
+                FilterChip(
+                    selected = uiState.selectedRegion != null,
+                    onClick = { showRegionModal = true },
+                    label = { Text(uiState.selectedRegion ?: "Region") },
+                    trailingIcon = { Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(16.dp)) }
+                )
+
+                // Language Filter
+                FilterChip(
+                    selected = uiState.selectedLanguage != null,
+                    onClick = { showLanguageModal = true },
+                    label = { Text(uiState.selectedLanguage ?: "Language") },
+                    trailingIcon = { Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(16.dp)) }
+                )
+                
+                // Gender Filter
+                FilterChip(
+                    selected = uiState.selectedGender != null,
+                    onClick = { showGenderModal = true },
+                    label = { Text(uiState.selectedGender ?: "Gender") },
+                    trailingIcon = { Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(16.dp)) }
+                )
+                
+                // Quality Filter (Piper only)
+                if (uiState.availableQualities.isNotEmpty()) {
                     FilterChip(
-                        selected = uiState.selectedGender == null && uiState.selectedRegion == null,
-                        onClick = { viewModel.clearFilters() },
-                        label = { Text("All") },
-                        leadingIcon = if (uiState.selectedGender == null && uiState.selectedRegion == null) {
-                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
-                        } else null
+                        selected = uiState.selectedQuality != null,
+                        onClick = { showQualityModal = true },
+                        label = { Text(uiState.selectedQuality ?: "Quality") },
+                        trailingIcon = { Icon(Icons.Default.KeyboardArrowDown, null, modifier = Modifier.size(16.dp)) }
                     )
                 }
-                item {
-                    FilterChip(
-                        selected = uiState.selectedRegion == "US",
-                        onClick = { 
-                            if (uiState.selectedRegion == "US") viewModel.selectRegion(null) else viewModel.selectRegion("US")
-                        },
-                        label = { Text("🇺🇸 US") }
-                    )
-                }
-                item {
-                    FilterChip(
-                        selected = uiState.selectedRegion == "UK",
-                        onClick = { 
-                            if (uiState.selectedRegion == "UK") viewModel.selectRegion(null) else viewModel.selectRegion("UK")
-                        },
-                        label = { Text("🇬🇧 UK") }
-                    )
-                }
-                item {
-                     FilterChip(
-                        selected = uiState.selectedGender == "Male",
-                        onClick = { 
-                            if (uiState.selectedGender == "Male") viewModel.selectGender(null) else viewModel.selectGender("Male")
-                        },
-                        label = { Text("Male") }
-                    )
-                }
-                item {
-                     FilterChip(
-                        selected = uiState.selectedGender == "Female",
-                        onClick = { 
-                            if (uiState.selectedGender == "Female") viewModel.selectGender(null) else viewModel.selectGender("Female")
-                        },
-                        label = { Text("Female") }
-                    )
+                
+                // Clear
+                if (uiState.selectedRegion != null || uiState.selectedLanguage != null || uiState.selectedGender != null || uiState.selectedQuality != null) {
+                    IconButton(onClick = { viewModel.clearFilters() }) {
+                        Icon(Icons.Default.Clear, "Clear filters")
+                    }
                 }
             }
             
@@ -220,12 +238,134 @@ fun VoicesScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(uiState.filteredVoices) { voice ->
-                        VoiceCard(
+                        com.nekospeak.tts.ui.components.VoiceCard(
                             voice = voice,
                             isSelected = voice.id == uiState.selectedVoiceId,
-                            onVoiceSelected = { viewModel.selectVoice(voice.id) }
+                            onVoiceSelected = { viewModel.selectVoice(voice.id) },
+                            onDownload = { viewModel.downloadVoice(voice) }
                         )
                     }
+                }
+            }
+        }
+        
+        if (showLanguageModal) {
+            ModalBottomSheet(
+                onDismissRequest = { showLanguageModal = false }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 32.dp)
+                ) {
+                    Text(
+                        "Select Language",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    Divider()
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { 
+                                        viewModel.selectLanguage(null)
+                                        showLanguageModal = false
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = uiState.selectedLanguage == null,
+                                    onClick = { 
+                                        viewModel.selectLanguage(null)
+                                        showLanguageModal = false
+                                    }
+                                )
+                                Text("All Languages", style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                        
+                        items(uiState.availableLanguages) { lang ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { 
+                                        viewModel.selectLanguage(lang)
+                                        showLanguageModal = false
+                                    }
+                                    .padding(vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = uiState.selectedLanguage == lang,
+                                    onClick = { 
+                                        viewModel.selectLanguage(lang)
+                                        showLanguageModal = false
+                                    }
+                                )
+                                Text(lang, style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (showRegionModal) {
+            ModalBottomSheet(onDismissRequest = { showRegionModal = false }) {
+                Column(modifier = Modifier.padding(bottom=32.dp)) {
+                    Text("Select Region", style=MaterialTheme.typography.titleLarge, modifier=Modifier.padding(16.dp))
+                    Divider()
+                    uiState.availableRegions.forEach { region ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { viewModel.selectRegion(region); showRegionModal = false }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(region)
+                        }
+                    }
+                    Button(onClick={viewModel.selectRegion(null); showRegionModal=false}, modifier=Modifier.padding(16.dp).fillMaxWidth()) { Text("Clear Region") }
+                }
+            }
+        }
+        
+        if (showGenderModal) {
+             ModalBottomSheet(onDismissRequest = { showGenderModal = false }) {
+                Column(modifier = Modifier.padding(bottom=32.dp)) {
+                    Text("Select Gender", style=MaterialTheme.typography.titleLarge, modifier=Modifier.padding(16.dp))
+                    Divider()
+                    listOf("Male", "Female").forEach { gender ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { viewModel.selectGender(gender); showGenderModal = false }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(gender)
+                        }
+                    }
+                    Button(onClick={viewModel.selectGender(null); showGenderModal=false}, modifier=Modifier.padding(16.dp).fillMaxWidth()) { Text("Clear Gender") }
+                }
+            }
+        }
+        
+        if (showQualityModal) {
+             ModalBottomSheet(onDismissRequest = { showQualityModal = false }) {
+                Column(modifier = Modifier.padding(bottom=32.dp)) {
+                    Text("Select Quality", style=MaterialTheme.typography.titleLarge, modifier=Modifier.padding(16.dp))
+                    Divider()
+                    uiState.availableQualities.forEach { quality ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { viewModel.selectQuality(quality); showQualityModal = false }.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(quality.replaceFirstChar { it.uppercaseChar() })
+                        }
+                    }
+                    Button(onClick={viewModel.selectQuality(null); showQualityModal=false}, modifier=Modifier.padding(16.dp).fillMaxWidth()) { Text("Clear Quality") }
                 }
             }
         }

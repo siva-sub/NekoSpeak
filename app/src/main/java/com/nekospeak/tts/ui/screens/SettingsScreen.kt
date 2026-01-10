@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -88,12 +89,59 @@ fun SettingsScreen(navController: NavController) {
                             Text("Faster, lower quality", style = MaterialTheme.typography.bodySmall)
                         }
                     }
+
+                    // Piper (ONNX) - Generic Selection
+                    // Selection logic: If current model is already piper, keep it. 
+                    // If switching TO piper, default to amy-low or check stored voice.
+                    val isPiper = currentModel.startsWith("piper")
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (!isPiper) {
+                                    // Switch to default/bundled Piper voice
+                                    currentModel = "piper_en_US-amy-low"
+                                    prefs.currentModel = "piper_en_US-amy-low"
+                                    prefs.currentVoice = "en_US-amy-low" 
+                                }
+                            }
+                            .padding(vertical = 8.dp)
+                    ) {
+                        RadioButton(
+                            selected = isPiper,
+                            onClick = { 
+                                if (!isPiper) {
+                                    currentModel = "piper_en_US-amy-low"
+                                    prefs.currentModel = "piper_en_US-amy-low"
+                                    prefs.currentVoice = "en_US-amy-low"
+                                }
+                            }
+                        )
+                        Column {
+                            Text("Piper (ONNX)", fontWeight = FontWeight.Bold)
+                            val subtext = if (isPiper) {
+                                val voiceId = currentModel.removePrefix("piper_")
+                                "Active Voice: $voiceId"
+                            } else {
+                                "Fast, natural offline voices"
+                            }
+                            Text(subtext, style = MaterialTheme.typography.bodySmall)
+                            
+                            // Link to Voices Screen
+                            if (isPiper) {
+                                Text(
+                                    "Ensure to select your preferred voice in the 'Voices' tab.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top=4.dp)
+                                )
+                            }
+                        }
+                    }
                 }
             }
-            
-            Divider()
-            
-
             
             Divider()
             
@@ -170,16 +218,38 @@ fun SettingsScreen(navController: NavController) {
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Speed Control (Kitten Only)
-                    if (currentModel == "kitten_nano") {
+                    // Speed Control (Kitten & Piper)
+                    if (currentModel == "kitten_nano" || currentModel.startsWith("piper")) {
                          var speed by remember { mutableFloatStateOf(prefs.speechSpeed) }
                          
-                         Text("Speech Speed: ${String.format("%.1f", speed)}x", fontWeight = FontWeight.Medium)
-                         Text(
-                             "Adjust speaking rate for Kitten TTS.",
-                             style = MaterialTheme.typography.bodySmall,
-                             color = MaterialTheme.colorScheme.onSurfaceVariant
-                         )
+                         Row(
+                             verticalAlignment = Alignment.CenterVertically,
+                             modifier = Modifier.fillMaxWidth()
+                         ) {
+                             Text("Speech Speed: ${String.format("%.1f", speed)}x", fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                             Button(
+                                 onClick = { 
+                                     speed = 1.0f
+                                     prefs.speechSpeed = 1.0f 
+                                 },
+                                 enabled = speed != 1.0f
+                             ) {
+                                 Text("Reset")
+                             }
+                         }
+                         if (currentModel.startsWith("piper")) {
+                             Text(
+                                 "Note: Speed may not work on all Piper models due to model limitations.",
+                                 style = MaterialTheme.typography.bodySmall,
+                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                             )
+                         } else {
+                             Text(
+                                 "Adjust speaking rate.",
+                                 style = MaterialTheme.typography.bodySmall,
+                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                             )
+                         }
                          Slider(
                              value = speed,
                              onValueChange = { speed = it },

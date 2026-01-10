@@ -19,3 +19,6 @@ app/src/main/assets/kitten/
 .kotlin/
 .idea/
 *.log
+
+# Reference
+piper_onnx_ref/

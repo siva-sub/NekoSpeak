@@ -79,8 +79,17 @@ class NekoTtsService : TextToSpeechService() {
         initJob = serviceScope.async(Dispatchers.IO) {
             Log.i(TAG, "Starting engine initialization (Async)...")
             try {
-                val newEngine = KokoroEngine(applicationContext)
-                Log.i(TAG, "Created KokoroEngine. Initializing...")
+                val prefs = com.nekospeak.tts.data.PrefsManager(applicationContext)
+                val modelType = prefs.currentModel
+                
+                val newEngine = if (modelType.startsWith("piper")) {
+                    val voiceId = modelType.removePrefix("piper_")
+                    com.nekospeak.tts.engine.piper.PiperEngine(applicationContext, voiceId)
+                } else {
+                    KokoroEngine(applicationContext)
+                }
+                
+                Log.i(TAG, "Created ${newEngine::class.java.simpleName}. Initializing...")
                 
                 if (newEngine.initialize()) {
                      Log.i(TAG, "Engine initialized successfully.")

@@ -54,10 +54,15 @@ fun OnboardingScreen(navController: NavController) {
     
     // Update default voice when model changes if invalid
     LaunchedEffect(selectedModel) {
-        if (selectedModel == "kokoro_v1.0") {
-             if (selectedVoice !in kokoroStarters.map { it.first }) selectedVoice = kokoroStarters[0].first
-        } else {
-             if (selectedVoice !in kittenStarters.map { it.first }) selectedVoice = kittenStarters[0].first
+        val validVoices = when (selectedModel) {
+            "kokoro_v1.0" -> kokoroStarters.map { it.first }
+            "kitten_nano" -> kittenStarters.map { it.first }
+            "piper_en_US-amy-low" -> listOf("en_US-amy-low")
+            else -> emptyList()
+        }
+        
+        if (selectedVoice !in validVoices) {
+            selectedVoice = validVoices.firstOrNull() ?: "af_heart"
         }
     }
 
@@ -140,6 +145,16 @@ fun OnboardingScreen(navController: NavController) {
                                 isSelected = selectedModel == "kitten_nano",
                                 onClick = { selectedModel = "kitten_nano" }
                             )
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            ModelSelectionCard(
+                                title = "Piper (Amy Low)",
+                                description = "Fast, natural English voice. Bundled offline.",
+                                warning = null,
+                                isSelected = selectedModel == "piper_en_US-amy-low",
+                                onClick = { selectedModel = "piper_en_US-amy-low" }
+                            )
                         }
                         1 -> {
                             // Step 2: Voice Selection
@@ -151,7 +166,12 @@ fun OnboardingScreen(navController: NavController) {
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                             )
                             
-                            val voices = if (selectedModel == "kokoro_v1.0") kokoroStarters else kittenStarters
+                            val voices = when (selectedModel) {
+                                "kokoro_v1.0" -> kokoroStarters
+                                "kitten_nano" -> kittenStarters
+                                "piper_en_US-amy-low" -> listOf("en_US-amy-low" to "Amy (Low)")
+                                else -> kokoroStarters
+                            }
                             
                             // Simple list for voices
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

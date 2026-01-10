@@ -13,7 +13,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 6
-        versionName = "1.0.5"
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -113,6 +113,9 @@ dependencies {
     
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // JSON
+    implementation("com.google.code.gson:gson:2.10.1")
     
     // Testing
     testImplementation("junit:junit:4.13.2")

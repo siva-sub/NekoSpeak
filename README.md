@@ -5,10 +5,9 @@
 [![GitHub stars](https://img.shields.io/github/stars/siva-sub/NekoSpeak?style=social)](https://github.com/siva-sub/NekoSpeak/stargazers)
 ![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.18.0-blue)
 ![CPU](https://img.shields.io/badge/CPU-supported-brightgreen)
-[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.5)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
+[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.6)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
 
-
-**NekoSpeak** is a private, on-device AI Text-to-Speech (TTS) engine for Android. It combines the expressive power of **Kokoro v1.0** with the lightning-fast efficiency of **Kitten TTS Nano**.
+**NekoSpeak** is a private, on-device AI Text-to-Speech (TTS) engine for Android. It combines the expressive power of **Kokoro v1.0**, the efficiency of **Kitten TTS Nano**, and the versatility of **Piper** into a single, seamless experience.
 
 <p align="center">
   <img src="screenshot_voices.png" width="250" alt="Voice Selection">
@@ -16,10 +15,13 @@
 </p>
 
 ### 📥 Download
-**v1.0.5 is now available!**
-*   **Universal**: Works on all devices (larger size).
+**v1.0.6 is now available!**
+*   **Universal**: Works on all devices (larger size due to bundled models).
 *   **arm64-v8a**: Optimized for modern devices (Pixel, Samsung S-series).
 *   **armeabi-v7a**: Optimized for older/low-end devices.
+
+> **Why is the APK size large?**
+> NekoSpeak comes pre-packaged with high-quality AI models (Kokoro-82M, Piper-Amy) to ensure **100% offline functionality** right out of the box. No initial downloads required!
 
 [**Download from Releases**](https://github.com/siva-sub/NekoSpeak/releases)
 
@@ -30,105 +32,66 @@ Developed by **Sivasubramanian Ramanathan**
 
 ## Features
 
-*   **Dual Model Support**:
-    *   **Kokoro v1.0 (82M)**: High-quality, expressive narration. Perfect for short reads and notifications.
-    *   **Kitten TTS Nano**: Extremely lightweight and fast. Ideal for long-form content like e-books.
+*   **Triple Engine Support**:
+    *   **Kokoro v1.0 (82M)**: State-of-the-art expressive narration. Best for audiobooks and reading.
+    *   **Piper**: Fast, efficient, and multilingual. Supports hundreds of community voices (English, Tamil, Spanish, etc.).
+    *   **Kitten TTS Nano**: Extremely lightweight and fast. Ideal for older devices.
 *   **Privacy First**: All processing happens 100% on-device. No data is ever sent to the cloud.
-*   **Battery Friendly**: Optimized for minimal power consumption.
 *   **System-Wide Integration**: Works with any Android app that supports TTS (MoonReader, @Voice, etc.).
-*   **Multiple Voices**: Includes a variety of voices (Heart, Adam, Bella, etc.) with region and gender filtering.
-
-> **Note**: The **Release APK** (v1.0.5+) includes specialized builds for **arm64** and **armv7**. No additional downloads required!
->
-> If you are building from source, you must manually download the ONNX models from [Releases](https://github.com/siva-sub/NekoSpeak/releases) and place them in `app/src/main/assets/`.
+*   **Advanced Voice Management**:
+    *   **Cloud Voice Store**: Browse and download hundreds of Piper voices directly within the app.
+    *   **Quality Filters**: Filter voices by quality (x_low to high).
+    *   **Persistence**: Remembers your preferred voice and speed settings.
 
 ## Architecture
 
-**NekoTtsService** vs **KokoroEngine**:
-*   **NekoTtsService**: The **Face** of the app. Handles Android TTS API requests, thread management, and audio streaming callbacks.
-*   **KokoroEngine**: The **Brain**. Handles Model/ONNX inference, Tokenization, and raw audio synthesis.
+**NekoTtsService** vs **Engines**:
+*   **NekoTtsService**: The **Face** of the app. Handles Android TTS API requests and audio streaming.
+*   **Engines (Kokoro/Piper/Kitten)**: The **The Brains**. Handle Model/ONNX inference and raw audio synthesis.
 
-### Technical Deep Dive: From Text to Audio
+### Technical Deep Dive: The Hybrid Pipeline
 
-The core of NekoSpeak is a pipeline that transforms raw text into synthesized audio. This process involves several critical stages, each handled by specific components.
+The following diagram illustrates the data flow through the application, supporting multiple engines:
 
-#### 1. Why Preprocess?
-Raw text cannot be fed directly into a neural network. It must first be converted into a sequence of **Phonemes** (the distinct units of sound) and then mapped to **Tokens** (integer IDs).
-*   **Text**: "Hello"
-*   **Phonemes**: `h`, `ə`, `l`, `oʊ`
-*   **Tokens**: `[24, 83, 28, 57]`
-
-Preprocessing ensures the model "pronounces" words correctly, regardless of their spelling (e.g., "rough" vs "dough").
-
-#### 2. The Inference Pipeline
-
-The following diagram illustrates the exact data flow through the application:
 ```mermaid
 graph TD
     subgraph Input [Input Processing]
-        RawText["Raw Text (String)"] -->|NekoTtsService| Split{Sentence Splitter}
-        Split -->|Sentence Chunk| P[Phonemizer.kt]
-        
-        subgraph P [Phonemization Layer]
-            direction TB
-            Norm[Normalization] -->|Num2Words| CleanText
-            CleanText -->|G2P / EspeakWrapper| Phonemes
-            Phonemes -->|Vocabulary Map| Tokens["Tokens (Int Array)"]
-        end
+        RawText["Raw Text (String)"] -->|NekoTtsService| Routing{Engine Router}
+        Routing -->|Kokoro| K_G2P[Misaki G2P]
+        Routing -->|Piper| P_G2P[Misaki + Espeak Fallback]
+        Routing -->|Kitten| E_G2P[Espeak Only]
     end
 
-    subgraph Core [Kokoro Engine Core]
-        Tokens -->|Batching| Inputs{Model Inputs}
-        VoiceFile["Voice Style (.npy)"] -->|Load FloatArray| Style["Style Vector (1x256)"]
-        SpeedParam["Speed (Float)"] -->|User Prefs| Speed["Speed Tensor"]
+    subgraph Core [Inference Core]
+        K_G2P -->|Tokens| K_ONNX[Kokoro ONNX (82M)]
+        P_G2P -->|IPA Phonemes| P_ONNX[Piper ONNX]
+        E_G2P -->|Phoneme IDs| Kit_ONNX[Kitten Nano ONNX]
         
-        Inputs -->|Tokens + Style + Speed| ONNX[ONNX Runtime Session]
+        VoiceFile["Voice Style / Config"] -.-> K_ONNX
+        VoiceFile -.-> P_ONNX
+        
+        SpeedParam["Speed (Float)"] -.-> K_ONNX
+        SpeedParam -.-> P_ONNX
     end
 
     subgraph Output [Audio Synthesis]
-        ONNX -->|Inference| MelSpec[Implicit Mel Spectrogram]
-        MelSpec -->|Vocoder| FloatAudio["Raw Audio (Float32)"]
-        FloatAudio -->|Callback| PCM["PCM 16-bit Converter"]
-        PCM -->|Byte Stream| AudioTrack[Android AudioTrack]
+        K_ONNX -->|Float32| PCM[PCM Converter]
+        P_ONNX -->|Float32| PCM
+        Kit_ONNX -->|Float32| PCM
+        PCM -->|16-bit Stream| AudioTrack[Android AudioTrack]
     end
-
-    P --> Core
-    Core --> Output
 ```
 
-#### 3. Component Breakdown
+### Component Breakdown
 
-*   **`NekoTtsService.kt`**:
-    *   **Role**: Application Entry Point.
-    *   **Responsibility**: Receives `SynthesisRequest` from Android. Manages the lifecycle of the engine. Buffer exact bytes to the system `AudioTrack`.
+*   **`NekoTtsService.kt`**: Application Entry Point. Managing lifecycle and dispatching requests to the active engine.
+*   **`PiperEngine.kt`**:
+    *   **Hybrid Phonemization**: Uses **Misaki** for high-quality English phonemes (converted to IPA) and falls back to **Espeak-NG** for other languages (e.g., Tamil, Arabic).
+    *   **On-Demand Loading**: Loads voices dynamically from storage.
 *   **`KokoroEngine.kt`**:
-    *   **Role**: Result Orchestrator.
-    *   **Flow**:
-        1.  **Splitting**: Breaks large paragraphs into sentences to fit context windows.
-        2.  **Batching**: Accumulates tokens until `MAX_TOKENS` is reached to maximize inference efficiency.
-        3.  **Trimming**: (Kitten specific) Trims silence from generated audio to prevent "robotic" pauses.
-*   **`Phonemizer.kt` & `EspeakWrapper.kt`**:
-    *   **Role**: Linguistic Processor.
-    *   **Process**:
-        *   **`Misaki G2P`**: Primary engine. Uses a rule-based system + lexicon for high-speed American/British English phonemization.
-        *   **`EspeakWrapper`**: Native JNI fallback. If Misaki fails or a non-English word is encountered, Espeak provides robust phoneme generation.
-*   **`TtsEngine.kt`**:
-    *   **Role**: System Interface. Defines the contract (`initialize`, `generate`, `release`) for interchangeable backends.
+    *   **Style Vectors**: Slices specific voice styles from a massive `voices.bin` file.
 
-#### 4. ONNX Model Internals
-
-How does **Kokoro/Kitten** actually "speak"?
-*   **Inputs**:
-    *   `tokens`: The sequence of phoneme IDs (Shape: `[1, N]`).
-    *   `style`: A fixed-size embedding vector (Shape: `[1, 256]`) representing the voice's timber (e.g., pitch, resonance). This is chopped from the giant `voices.bin` file.
-    *   `speed`: A scalar controlling the duration of phonemes.
-*   **Output**:
-    *   `audio`: A raw waveform array (Float32). Unlike older TTS which produced Mel Spectrograms requiring a separate Vocoder (HiFiGAN), Kokoro is **End-to-End**, outputting audio directly.
-
-
-
-
-### 📂 Project Structure
+## 📂 Project Structure
 ```text
 .
 ├── app
@@ -136,30 +99,30 @@ How does **Kokoro/Kitten** actually "speak"?
 │   │   ├── main
 │   │   │   ├── java/com/nekospeak/tts  (Kotlin Source)
 │   │   │   ├── cpp/                    (Native C++ / JNI)
-│   │   │   ├── assets/                 (Model & Voice Data)
+│   │   │   ├── assets/                 (Bundled Models)
 │   │   │   └── res/                    (UI Resources)
 │   ├── build.gradle.kts                (App Build Config)
 ├── gradle                              (Gradle Wrapper)
 ├── build.gradle.kts                    (Root Build Config)
-├── settings.gradle.kts                 (Project Settings)
-├── README.md                           (Documentation)
-└── LICENSE                             (MIT License)
+└── README.md                           (Documentation)
 ```
 
 ## Credits & Acknowledgements
 
-This project stands on the shoulders of giants. We gratefully acknowledge the following open-source projects:
+We gratefully acknowledge the incredibly work of the open-source AI community:
 
-*   **[KittenTTS](https://github.com/KittenML/KittenTTS)** (Apache 2.0)
-    *   A massive thanks to the KittenML team for their incredible work on efficient TTS architectures.
-*   **[Kitten TTS Nano Model](https://huggingface.co/KittenML/kitten-tts-nano-0.1)** (Apache 2.0)
-    *   The 0.1 Nano model provides the speed and efficiency backbone of this app.
-*   **[Kokoro-ONNX](https://github.com/thewh1teagle/kokoro-onnx)** (Apache 2.0)
-    *   Reference implementation for running Kokoro models via ONNX Runtime. **Huge thanks** to [thewh1teagle](https://github.com/thewh1teagle) for the inspiration and the amazing work on the ONNX export.
+*   **[Piper](https://github.com/rhasspy/piper)** & **[Piper Voices](https://huggingface.co/rhasspy/piper-voices)**
+    *   Thanks to the Rhasspy team for the amazing Piper architecture and the massive collection of high-quality voices.
+*   **[Piper Tamil Voice (Valluvar)](https://huggingface.co/datasets/Jeyaram-K/piper-tamil-voice)**
+    *   Special thanks to **Jeyaram-K** for training and providing the high-quality Tamil "Valluvar" model.
+*   **[Kokoro-ONNX](https://github.com/thewh1teagle/kokoro-onnx)**
+    *   Thanks to [thewh1teagle](https://github.com/thewh1teagle) for the inspiration and ONNX export work.
+*   **[KittenTTS](https://github.com/KittenML/KittenTTS)**
+    *   Thanks to the KittenML team for their work on efficient TTS architectures.
 *   **[Misaki](https://github.com/hexgrad/misaki)**
-    *   G2P (Grapheme-to-Phoneme) logic was ported from this excellent library.
-*   **[Espeak-NG](https://github.com/espeak-ng/espeak-ng)** (GPL 3.0)
-    *   Used as a robust fallback for complex phonemization tasks.
+    *   G2P logic ported from this excellent library.
+*   **[Espeak-NG](https://github.com/espeak-ng/espeak-ng)**
+    *   The backbone of multilingual phonemization.
 
 ## License
 
@@ -167,29 +130,4 @@ This project stands on the shoulders of giants. We gratefully acknowledge the fo
 
 > **Note**: While the NekoSpeak application code is MIT, it bundles dependencies with their own licenses:
 > *   **Espeak-NG**: GPL v3.0
-> *   **ONNX Models**: Apache 2.0
-
-```text
-MIT License
-
-Copyright (c) 2026
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
+> *   **ONNX Models**: Apache 2.0 / CC-BY-4.0 (Check specific model licenses)
