@@ -57,15 +57,15 @@ The following diagram illustrates the data flow through the application, support
 graph TD
     subgraph Input [Input Processing]
         RawText["Raw Text (String)"] -->|NekoTtsService| Routing{Engine Router}
-        Routing -->|Kokoro| K_G2P[Misaki G2P]
-        Routing -->|Piper| P_G2P[Misaki + Espeak Fallback]
-        Routing -->|Kitten| E_G2P[Espeak Only]
+        Routing -->|Kokoro| K_G2P["Misaki G2P + Espeak"]
+        Routing -->|Piper| P_G2P["Misaki + Espeak Fallback"]
+        Routing -->|Kitten| K_G2P
     end
 
     subgraph Core [Inference Core]
         K_G2P -->|Tokens| K_ONNX["Kokoro ONNX (82M)"]
         P_G2P -->|IPA Phonemes| P_ONNX["Piper ONNX"]
-        E_G2P -->|Phoneme IDs| Kit_ONNX["Kitten Nano ONNX"]
+        K_G2P -->|Tokens| Kit_ONNX["Kitten Nano ONNX"]
         
         VoiceFile["Voice Style / Config"] -.-> K_ONNX
         VoiceFile -.-> P_ONNX

@@ -38,7 +38,7 @@ class Phonemizer(private val context: Context) {
         "ʍ" to 141, "χ" to 142, "ʎ" to 143, "ʏ" to 144, "ʑ" to 145, "ʐ" to 146, "ʒ" to 147, "ʔ" to 148, "ʡ" to 149,
         "ʕ" to 150, "ʢ" to 151, "ǀ" to 152, "ǁ" to 153, "ǂ" to 154, "ǃ" to 155, "ˈ" to 156, "ˌ" to 157, "ː" to 158,
         "ˑ" to 159, "ʼ" to 160, "ʴ" to 161, "ʰ" to 162, "ʱ" to 163, "ʲ" to 164, "ʷ" to 165, "ˠ" to 166, "ˤ" to 167,
-        "˞" to 168, "↓" to 169, "↑" to 170, "→" to 171, "↗" to 172, "↘" to 173, "'" to 174, "̩" to 175, "ᵻ" to 177
+        "˞" to 168, "↓" to 169, "↑" to 170, "→" to 171, "↗" to 172, "↘" to 173, "'" to 176, "̩" to 175, "ᵻ" to 177
     )
     
     private lateinit var g2pUS: G2P
