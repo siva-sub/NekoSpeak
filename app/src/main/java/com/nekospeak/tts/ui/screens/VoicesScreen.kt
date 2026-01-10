@@ -41,11 +41,13 @@ fun VoicesScreen(
     var tts: TextToSpeech? by remember { mutableStateOf(null) }
     
     DisposableEffect(Unit) {
-        tts = TextToSpeech(context) { status ->
+        // Explicitly use our own engine package to ensure we test NekoSpeak
+        // regardless of the system-wide default setting.
+        tts = TextToSpeech(context, { status ->
              if (status == TextToSpeech.SUCCESS) {
                  // Init
              }
-        }
+        }, "com.nekospeak.tts")
         onDispose {
             tts?.shutdown()
         }

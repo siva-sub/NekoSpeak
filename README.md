@@ -5,7 +5,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/siva-sub/NekoSpeak?style=social)](https://github.com/siva-sub/NekoSpeak/stargazers)
 ![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.18.0-blue)
 ![CPU](https://img.shields.io/badge/CPU-supported-brightgreen)
-[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.4)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
+[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.5)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
 
 
 **NekoSpeak** is a private, on-device AI Text-to-Speech (TTS) engine for Android. It combines the expressive power of **Kokoro v1.0** with the lightning-fast efficiency of **Kitten TTS Nano**.
@@ -16,7 +16,7 @@
 </p>
 
 ### 📥 Download
-**v1.0.4 is now available!**
+**v1.0.5 is now available!**
 *   **Universal**: Works on all devices (larger size).
 *   **arm64-v8a**: Optimized for modern devices (Pixel, Samsung S-series).
 *   **armeabi-v7a**: Optimized for older/low-end devices.
@@ -38,7 +38,7 @@ Developed by **Sivasubramanian Ramanathan**
 *   **System-Wide Integration**: Works with any Android app that supports TTS (MoonReader, @Voice, etc.).
 *   **Multiple Voices**: Includes a variety of voices (Heart, Adam, Bella, etc.) with region and gender filtering.
 
-> **Note**: The **Release APK** (v1.0.4+) includes specialized builds for **arm64** and **armv7**. No additional downloads required!
+> **Note**: The **Release APK** (v1.0.5+) includes specialized builds for **arm64** and **armv7**. No additional downloads required!
 >
 > If you are building from source, you must manually download the ONNX models from [Releases](https://github.com/siva-sub/NekoSpeak/releases) and place them in `app/src/main/assets/`.
 
