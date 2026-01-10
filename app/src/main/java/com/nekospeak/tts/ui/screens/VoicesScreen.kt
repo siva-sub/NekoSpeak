@@ -22,7 +22,6 @@ import androidx.navigation.NavController
 import com.nekospeak.tts.data.PrefsManager
 import com.nekospeak.tts.ui.components.VoiceCard
 import com.nekospeak.tts.ui.viewmodel.VoicesViewModel
-import com.nekospeak.tts.ui.components.VoiceCard
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -70,18 +69,10 @@ fun VoicesScreen(
             TopAppBar(
                 title = { 
                     Column {
-                        Text("Voices")
+                        Text("Voices", style = MaterialTheme.typography.titleLarge)
                         Text(
                             text = "${uiState.filteredVoices.size} voices available",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { viewModel.toggleFilters() }) {
-                        Icon(
-                            imageVector = if (uiState.showFilters) Icons.Default.Close else Icons.Default.Menu,
-                            contentDescription = "Filters"
+                            style = MaterialTheme.typography.labelMedium
                         )
                     }
                 }
@@ -98,7 +89,7 @@ fun VoicesScreen(
                         .fillMaxWidth()
                         .padding(16.dp)
                         .navigationBarsPadding()
-                        .imePadding(), // Handle keyboard
+                        .imePadding(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
@@ -113,14 +104,6 @@ fun VoicesScreen(
                     FloatingActionButton(
                         onClick = {
                              val voiceId = uiState.selectedVoiceId ?: prefs.currentVoice
-                             // Hack: Setting voice name in Bundle for API < 21 compatibility if needed, 
-                             // but mostly relying on service checking Prefs now.
-                             // However, for immediate feedback in THIS session, we ask TTS to reload?
-                             // Standard Android TTS API creates a new request.
-                             // Service onSynthesizeText will be called.
-                             // It will check PrefsManager (which we just updated).
-                             // So saving to prefs is the key!
-                             
                              val params = android.os.Bundle()
                              params.putString("voiceName", voiceId)
                              tts?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test_id")
@@ -144,7 +127,7 @@ fun VoicesScreen(
                 onValueChange = viewModel::updateSearchQuery,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 placeholder = { Text("Search voices...") },
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 trailingIcon = {
@@ -158,60 +141,89 @@ fun VoicesScreen(
                 shape = RoundedCornerShape(12.dp)
             )
             
-            // Filter Panel
-            if (uiState.showFilters) {
-                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text("Gender", style = MaterialTheme.typography.labelSmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = uiState.selectedGender == null,
-                            onClick = { viewModel.selectGender(null) },
-                            label = { Text("All") }
-                        )
-                        FilterChip(
-                            selected = uiState.selectedGender == "Male",
-                            onClick = { viewModel.selectGender("Male") },
-                            label = { Text("Male") }
-                        )
-                        FilterChip(
-                            selected = uiState.selectedGender == "Female",
-                            onClick = { viewModel.selectGender("Female") },
-                            label = { Text("Female") }
-                        )
-                    }
-                    
-                    Text("Region", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = uiState.selectedRegion == null,
-                            onClick = { viewModel.selectRegion(null) },
-                            label = { Text("All") }
-                        )
-                        FilterChip(
-                            selected = uiState.selectedRegion == "US",
-                            onClick = { viewModel.selectRegion("US") },
-                            label = { Text("US") }
-                        )
-                         FilterChip(
-                            selected = uiState.selectedRegion == "UK",
-                            onClick = { viewModel.selectRegion("UK") },
-                            label = { Text("UK") }
-                        )
-                    }
+            // Visible Filters (LazyRow)
+            androidx.compose.foundation.lazy.LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 8.dp)
+            ) {
+                item {
+                    FilterChip(
+                        selected = uiState.selectedGender == null && uiState.selectedRegion == null,
+                        onClick = { viewModel.clearFilters() },
+                        label = { Text("All") },
+                        leadingIcon = if (uiState.selectedGender == null && uiState.selectedRegion == null) {
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
+                        } else null
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = uiState.selectedRegion == "US",
+                        onClick = { 
+                            if (uiState.selectedRegion == "US") viewModel.selectRegion(null) else viewModel.selectRegion("US")
+                        },
+                        label = { Text("🇺🇸 US") }
+                    )
+                }
+                item {
+                    FilterChip(
+                        selected = uiState.selectedRegion == "UK",
+                        onClick = { 
+                            if (uiState.selectedRegion == "UK") viewModel.selectRegion(null) else viewModel.selectRegion("UK")
+                        },
+                        label = { Text("🇬🇧 UK") }
+                    )
+                }
+                item {
+                     FilterChip(
+                        selected = uiState.selectedGender == "Male",
+                        onClick = { 
+                            if (uiState.selectedGender == "Male") viewModel.selectGender(null) else viewModel.selectGender("Male")
+                        },
+                        label = { Text("Male") }
+                    )
+                }
+                item {
+                     FilterChip(
+                        selected = uiState.selectedGender == "Female",
+                        onClick = { 
+                            if (uiState.selectedGender == "Female") viewModel.selectGender(null) else viewModel.selectGender("Female")
+                        },
+                        label = { Text("Female") }
+                    )
                 }
             }
             
-            // Voice List
-            LazyColumn(
-                contentPadding = PaddingValues(start=16.dp, end=16.dp, bottom=100.dp), // Extra bottom padding for TestBar
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(uiState.filteredVoices) { voice ->
-                    VoiceCard(
-                        voice = voice,
-                        isSelected = voice.id == uiState.selectedVoiceId,
-                        onVoiceSelected = { viewModel.selectVoice(voice.id) }
-                    )
+            if (uiState.filteredVoices.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxSize().weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("No voices found", style = MaterialTheme.typography.titleMedium)
+                        Text("Try adjusting your filters", style = MaterialTheme.typography.bodyMedium)
+                        Button(
+                            onClick = { viewModel.clearFilters() },
+                            modifier = Modifier.padding(top = 16.dp)
+                        ) {
+                            Text("Clear Filters")
+                        }
+                    }
+                }
+            } else {
+                // Voice List
+                LazyColumn(
+                    contentPadding = PaddingValues(start=16.dp, end=16.dp, bottom=100.dp), // Extra bottom padding for TestBar
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(uiState.filteredVoices) { voice ->
+                        VoiceCard(
+                            voice = voice,
+                            isSelected = voice.id == uiState.selectedVoiceId,
+                            onVoiceSelected = { viewModel.selectVoice(voice.id) }
+                        )
+                    }
                 }
             }
         }

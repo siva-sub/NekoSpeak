@@ -1,8 +1,8 @@
 package com.nekospeak.tts.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
@@ -14,7 +14,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -22,18 +24,17 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.runtime.remember
-import com.nekospeak.tts.ui.screens.SettingsScreen
+import com.nekospeak.tts.data.PrefsManager
 import com.nekospeak.tts.ui.navigation.Screen
+import com.nekospeak.tts.ui.screens.OnboardingScreen
+import com.nekospeak.tts.ui.screens.SettingsScreen
 import com.nekospeak.tts.ui.screens.VoicesScreen
 
 @Composable
 fun MainScreen() {
     val navController = rememberNavController()
     val context = LocalContext.current
-    val prefs = remember { com.nekospeak.tts.data.PrefsManager(context) }
+    val prefs = remember { PrefsManager(context) }
     
     val startDestination = if (prefs.isOnboardingComplete) Screen.Voices.route else Screen.Onboarding.route
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -46,7 +47,8 @@ fun MainScreen() {
             if (showBottomBar) {
                 BottomNavBar(navController)
             }
-        }
+        },
+        contentWindowInsets = WindowInsets.navigationBars
     ) { innerPadding ->
         NavHost(
             navController = navController,
@@ -54,14 +56,12 @@ fun MainScreen() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Onboarding.route) {
-                com.nekospeak.tts.ui.screens.OnboardingScreen(navController = navController)
+                OnboardingScreen(navController = navController)
             }
             
             composable(Screen.Voices.route) {
                 VoicesScreen(navController = navController)
             }
-            
-
             
             composable(Screen.Settings.route) {
                 SettingsScreen(navController = navController)

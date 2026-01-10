@@ -23,7 +23,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
     companion object {
         private const val TAG = "KokoroEngine"
         const val SAMPLE_RATE = 24000
-        const val MAX_TOKENS = 50 // Reduced from 250 to 50 to improve latency on slow devices
+        const val MAX_TOKENS = 150 // Increased to 150 for better context and fewer gaps
         const val STYLE_DIM = 256
         
         // Kokoro Assets
@@ -153,16 +153,8 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                         
                         // Parse NPY header safely
                         // Magic: 0x93 NUMPY (6 bytes)
-                        // Major (1), Minor (1)
-                        // Header Len (2 bytes, little endian)
                         if (bytes.size < 10 || bytes[0] != 0x93.toByte() || String(bytes, 1, 5) != "NUMPY") {
-                             // Fallback for Kokoro .bin files which might just be raw data with skip?
-                             // But Kokoro voices-v1.0.bin ARE .npy files too. 
-                             // Wait, existing code skipped 128 bytes. Let's try to be smart.
-                             if (bytes.size > 128) {
-                                 // Assume fixed 128 header for now if magic check fails? 
-                                 // Actually Kokoro voices are standard NPY too.
-                             }
+                             // Fallback logic could go here
                         }
                         
                         var headerLen = 0
@@ -172,23 +164,10 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                             val headerLenShort = (bytes[8].toInt() and 0xFF) or ((bytes[9].toInt() and 0xFF) shl 8)
                             headerLen = headerLenShort
                             offset = 10 + headerLen
-                            
-                            // Align to 64 bytes? Some NPY writers pad.
-                            // But usually NPY data starts immediately after header.
-                            // However, Kokoro code skipped 128 bytes explicitly. 
-                            // 10 + headerLen is likely < 128 for these small files.
-                            // Let's stick to reading the proper header length.
-                            if (headerLen % 64 == 0) {
-                                // 64-byte alignment padding might be inside the header string itself
-                            }
+                            if (headerLen % 64 == 0) { }
                         } else {
-                            // Fallback to old behavior
                             offset = 128
                         }
-                        
-                        // Override for Kokoro: It seems they were padded to 128?
-                        // Let's rely on standard NPY parsing if valid, else 128.
-                        // Actually, let's just use the robust NPY read if magic present.
                         
                         if (offset >= bytes.size) throw IllegalStateException("Bad NPY file")
                         
@@ -252,10 +231,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
             val isKitten = currentModelInfo.first.contains("kitten")
             val prefs = com.nekospeak.tts.data.PrefsManager(context)
             
-            // If Kitten, use Prefs speed (ignoring system request 'speed' param if user preference exists? 
-            // Or combine them? User prompt implies UI control for Kitten.
-            // Let's use the UI setting preferentially for Kitten.
-            // For Kokoro, force 1.0.
+            // Assume UI preference takes precedence for Kitten, generated speed (1.0) for Kokoro
             val finalSpeed = if (isKitten) prefs.speechSpeed else 1.0f
             
             Log.d(TAG, "Generating with Speed: $finalSpeed (Model: ${if(isKitten) "Kitten" else "Kokoro"})")
@@ -289,14 +265,14 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                 val currentMaxTokens = if (prefTokenSize > 0) {
                     prefTokenSize
                 } else {
-                    // Auto: 50 for Kokoro (Faster start), 300 for Kitten (Safety)
-                    if (currentModelInfo.first.contains("kitten")) 300 else 50
+                    // Auto: 150 for Kokoro (Balance context/latency), 400 for Kitten
+                    if (currentModelInfo.first.contains("kitten")) 400 else 150
                 }
                 
                 Log.v(TAG, "Streaming chunk size: $currentMaxTokens tokens")
                 
                 // If adding these tokens exceeds limit, process current batch first
-                if (currentBatchTokens.size + tokens.size > currentMaxTokens - 2) { // -2 for start/end tokens
+                if (currentBatchTokens.size + tokens.size > currentMaxTokens - 2) { 
                     // Process accumulated batch
                     val startInf = System.currentTimeMillis()
                     processBatch(currentBatchTokens, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
@@ -304,15 +280,14 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                     currentBatchTokens.clear()
                 }
                 
-                // If valid single sentence is HUGE (larger than max), strictly chunk it
+                // CRITICAL FIX: Never split a sentence's tokens arbitrarily. 
+                // If a single sentence is larger than currentMaxTokens, we MUST process it as a whole 
+                // to preserve phoneme context. Splitting mid-word causes stuttering/garbage.
                 if (tokens.size > currentMaxTokens - 2) {
-                     val chunks = tokens.chunked(currentMaxTokens - 2)
-                     for (chunk in chunks) {
-                         // Double check cancellation
-                         if (!isActive) break
-                         val startInf = System.currentTimeMillis()
-                         processBatch(chunk, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
-                     }
+                     Log.w(TAG, "Sentence exceeds token limit (${tokens.size} > $currentMaxTokens). Processing as single large batch to avoid audio artifacts.")
+                     // Process immediately as its own batch
+                     val startInf = System.currentTimeMillis()
+                     processBatch(tokens, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
                 } else {
                     // Normal case: append to buffer
                     currentBatchTokens.addAll(tokens)
@@ -355,12 +330,6 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         startTime: Long,
         callback: (FloatArray) -> Unit
     ) {
-        // Enforce Speed Logic
-        // PrefsManager instance needed to read user preference for Kitten? 
-        // passing 'speed' argument comes from generate() which calls this.
-        // So logic should be in generate(). But processBatch receives 'speed'.
-        // Let's assume 'speed' passed here is already the correct one.
-        
         val paddedTokens = LongArray(tokens.size + 2)
         paddedTokens[0] = 0
         tokens.forEachIndexed { i, t -> paddedTokens[i + 1] = t.toLong() }
@@ -375,7 +344,6 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         val styleTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(style), longArrayOf(1, STYLE_DIM.toLong()))
         
         val speedTensor = if (useIntSpeed) {
-             // Round speed if int required, map to nearest int >= 1
              val intSpeed = (speed + 0.5f).toInt().coerceAtLeast(1)
              OnnxTensor.createTensor(env, IntBuffer.wrap(intArrayOf(intSpeed)), longArrayOf(1))
         } else {
@@ -396,29 +364,37 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         
         val genTimeMs = System.currentTimeMillis() - startTime
         
-        // Model Specific Trimming (Robustness for Kitten Nano)
+        // Model Specific Trimming
         val finalAudio = if (currentModelInfo.first.contains("kitten")) {
-            // Trim reduced to prevent cutting off short words (Misaki G2P output is tighter than Espeak)
-            // Was [5000, 10000], now [3000, 4000]
             val trimStart = 3000
             val trimEnd = 4000
-            val minLen = trimStart + trimEnd + 2400 // At least 0.1s audio left
+            val minLen = trimStart + trimEnd + 2400
             
             if (audioData.size > minLen) {
                 audioData.sliceArray(trimStart until (audioData.size - trimEnd))
             } else {
-                audioData // Too small to trim safely
+                audioData
             }
         } else {
-            audioData
+            // Kokoro trimming: Scan from end for first significant sample
+            var lastIndex = audioData.lastIndex
+            while (lastIndex > 0 && kotlin.math.abs(audioData[lastIndex]) < 0.01f) {
+                lastIndex--
+            }
+            lastIndex = (lastIndex + 500).coerceAtMost(audioData.lastIndex)
+            
+            if (lastIndex < audioData.lastIndex) {
+                 audioData.sliceArray(0..lastIndex)
+            } else {
+                 audioData
+            }
         }
         
         val audioDurationSec = finalAudio.size.toFloat() / SAMPLE_RATE
-        val rtf = genTimeMs / (audioDurationSec * 1000f)
+        val rtf = genTimeMs.toFloat() / (audioDurationSec * 1000f)
         
         Log.d(TAG, "Batch Processed: ${tokens.size} tokens -> ${audioDurationSec}s (Trimmed from ${audioData.size}) in ${genTimeMs}ms")
         
-        // STREAMING: Callback
         callback(finalAudio)
         
         inputIdsTensor.close()

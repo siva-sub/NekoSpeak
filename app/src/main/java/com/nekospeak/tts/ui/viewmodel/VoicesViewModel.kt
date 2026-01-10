@@ -111,12 +111,18 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
         val prefs = PrefsManager(context)
         allVoices = if (prefs.currentModel == "kitten_nano") kittenVoices else kokoroVoices
         
+        // Auto-fix filters if they are invalid for the current model
+        val currentRegion = _uiState.value.selectedRegion
+        if (currentRegion == "UK" && allVoices.none { it.region == "UK" }) {
+             _uiState.update { it.copy(selectedRegion = null) }
+        }
+        
         viewModelScope.launch {
             _uiState.update { 
                 it.copy(
                     isLoading = false, 
                     voices = allVoices,
-                    filteredVoices = allVoices,
+                    // filteredVoices will be updated by applyFilters
                     availableLanguages = allVoices.map { v -> v.language }.distinct().sorted(),
                     selectedVoiceId = prefs.currentVoice
                 ) 

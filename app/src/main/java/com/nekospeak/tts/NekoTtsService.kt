@@ -47,23 +47,58 @@ class NekoTtsService : TextToSpeechService() {
         Locale("en", "IN")
     )
     
+    private lateinit var prefsManager: com.nekospeak.tts.data.PrefsManager
+    
+    private val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        when (key) {
+            "current_model", "cpu_threads" -> {
+                Log.i(TAG, "Preference '$key' changed. Reloading engine...")
+                reloadEngine()
+            }
+            "current_voice" -> Log.i(TAG, "Voice changed. Will be applied on next synthesis.")
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "NekoTtsService created")
         
+        // Register Prefs Listener
+        prefsManager = com.nekospeak.tts.data.PrefsManager(this)
+        getSharedPreferences("nekospeak_prefs", MODE_PRIVATE)
+            .registerOnSharedPreferenceChangeListener(prefsListener)
+        
         // Start init loop
+        reloadEngine()
+    }
+
+    private fun reloadEngine() {
+        // Cancel any pending init? No, just replace the reference.
+        // The old job will finish and return an engine that we might abandon or close.
+        
         initJob = serviceScope.async(Dispatchers.IO) {
-            Log.i(TAG, "Starting engine initialization (Async Job)...")
+            Log.i(TAG, "Starting engine initialization (Async)...")
             try {
-                // Use applicationContext safely here as onCreate has been called
-                val engine = KokoroEngine(applicationContext)
-                Log.i(TAG, "Created KokoroEngine instance. calling initialize()...")
-                if (engine.initialize()) {
-                     Log.i(TAG, "Kokoro engine initialized successfully")
-                     engine
+                val newEngine = KokoroEngine(applicationContext)
+                Log.i(TAG, "Created KokoroEngine. Initializing...")
+                
+                if (newEngine.initialize()) {
+                     Log.i(TAG, "Engine initialized successfully.")
+                     
+                     // Atomically swap
+                     val oldEngine = currentEngine
+                     currentEngine = newEngine
+                     
+                     // Safely release old engine
+                     if (oldEngine != null && oldEngine != newEngine) {
+                         Log.i(TAG, "Releasing old engine instance.")
+                         oldEngine.release()
+                     }
+                     
+                     newEngine
                 } else {
-                     Log.e(TAG, "Kokoro engine initialization returned FALSE")
-                     engine
+                     Log.e(TAG, "Engine initialization FAILED.")
+                     newEngine
                 }
             } catch (t: Throwable) {
                 Log.e(TAG, "CRITICAL: InitJob crashed", t)
@@ -74,6 +109,9 @@ class NekoTtsService : TextToSpeechService() {
     
     override fun onDestroy() {
         super.onDestroy()
+        getSharedPreferences("nekospeak_prefs", MODE_PRIVATE)
+            .unregisterOnSharedPreferenceChangeListener(prefsListener)
+
         val job = initJob
         if (job != null && job.isCompleted) {
              runBlocking { job.await()?.release() }
@@ -252,7 +290,10 @@ class NekoTtsService : TextToSpeechService() {
     }
 
     override fun onGetVoices(): List<Voice> {
-        val engine = currentEngine ?: return emptyList()
+        val engine = currentEngine ?: run {
+             Log.w(TAG, "onGetVoices called but engine is null")
+             return emptyList()
+        }
         return engine.getVoices().map { name ->
             val locale = if (name.startsWith("af") || name.startsWith("am")) Locale.US else Locale.UK
             // Simple mapping of gender/region
