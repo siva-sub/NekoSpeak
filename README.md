@@ -21,7 +21,7 @@
 *   **armeabi-v7a**: Optimized for older/low-end devices.
 
 > **Why is the APK size large?**
-> NekoSpeak comes pre-packaged with high-quality AI models (Kokoro-82M, Piper-Amy) to ensure **100% offline functionality** right out of the box. No initial downloads required!
+> NekoSpeak comes pre-packaged with high-quality AI models (Kokoro-82M, Piper-Amy, Kitten-TTS-Nano) to ensure **100% offline functionality** right out of the box. No initial downloads required!
 
 [**Download from Releases**](https://github.com/siva-sub/NekoSpeak/releases)
 
@@ -63,9 +63,9 @@ graph TD
     end
 
     subgraph Core [Inference Core]
-        K_G2P -->|Tokens| K_ONNX[Kokoro ONNX (82M)]
-        P_G2P -->|IPA Phonemes| P_ONNX[Piper ONNX]
-        E_G2P -->|Phoneme IDs| Kit_ONNX[Kitten Nano ONNX]
+        K_G2P -->|Tokens| K_ONNX["Kokoro ONNX (82M)"]
+        P_G2P -->|IPA Phonemes| P_ONNX["Piper ONNX"]
+        E_G2P -->|Phoneme IDs| Kit_ONNX["Kitten Nano ONNX"]
         
         VoiceFile["Voice Style / Config"] -.-> K_ONNX
         VoiceFile -.-> P_ONNX
