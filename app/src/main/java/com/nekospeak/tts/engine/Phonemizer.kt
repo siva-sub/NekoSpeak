@@ -60,7 +60,7 @@ class Phonemizer(private val context: Context) {
             }
             
             espeak = EspeakWrapper()
-            val initRes = espeak.initialize(context.filesDir.absolutePath)
+            val initRes = espeak.initializeSafe(context.filesDir.absolutePath)
             if (initRes < 0) { // -1 is error, but returns sample rate on success?
                  Log.e(TAG, "Espeak init failed: $initRes")
             } else {
@@ -70,13 +70,13 @@ class Phonemizer(private val context: Context) {
             val usLexicon = Lexicon(context, british = false)
             usLexicon.load()
             g2pUS = G2P(usLexicon) { text -> 
-                try { espeak.textToPhonemes(text, "en-us") } catch (e: Exception) { null }
+                try { espeak.textToPhonemesSafe(text, "en-us") } catch (e: Exception) { null }
             }
             
             val gbLexicon = Lexicon(context, british = true)
             gbLexicon.load()
             g2pGB = G2P(gbLexicon) { text ->
-                try { espeak.textToPhonemes(text, "en-gb") } catch (e: Exception) { null } 
+                try { espeak.textToPhonemesSafe(text, "en-gb") } catch (e: Exception) { null } 
             }
             
             isLoaded = true
@@ -102,7 +102,7 @@ class Phonemizer(private val context: Context) {
                 else -> {
                     // Try direct Espeak for other languages
                     try {
-                        espeak.textToPhonemes(text, language)
+                        espeak.textToPhonemesSafe(text, language)
                     } catch (e: Exception) {
                         Log.w(TAG, "Espeak failed for $language, falling back to English")
                         g2pUS.phonemize(text)

@@ -143,7 +143,7 @@ fun SettingsScreen(navController: NavController) {
                 }
             }
             
-            Divider()
+            HorizontalDivider()
             
             SettingsSection(title = "Performance") {
                 Column(Modifier.padding(horizontal = 16.dp)) {
@@ -268,7 +268,7 @@ fun SettingsScreen(navController: NavController) {
                 }
             }
             
-            Divider()
+            HorizontalDivider()
             
             SettingsSection(title = "Battery") {
                  SettingsItem(
@@ -288,7 +288,7 @@ fun SettingsScreen(navController: NavController) {
                  )
             }
 
-            Divider()
+            HorizontalDivider()
             
             SettingsSection(title = "General") {
                 SettingsItem(
@@ -302,7 +302,7 @@ fun SettingsScreen(navController: NavController) {
                 )
             }
             
-            Divider()
+            HorizontalDivider()
             
             SettingsSection(title = "About") {
                 SettingsItem(

@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -77,7 +77,7 @@ fun BottomNavBar(navController: NavHostController) {
         val currentDestination = navBackStackEntry?.destination
 
         val items = listOf(
-            Screen.Voices to Icons.Default.List,
+            Screen.Voices to Icons.AutoMirrored.Filled.List,
             Screen.Settings to Icons.Default.Settings
         )
 

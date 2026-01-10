@@ -263,7 +263,7 @@ fun VoicesScreen(
                         style = MaterialTheme.typography.titleLarge,
                         modifier = Modifier.padding(16.dp)
                     )
-                    Divider()
+                    HorizontalDivider()
                     LazyColumn(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -320,7 +320,7 @@ fun VoicesScreen(
             ModalBottomSheet(onDismissRequest = { showRegionModal = false }) {
                 Column(modifier = Modifier.padding(bottom=32.dp)) {
                     Text("Select Region", style=MaterialTheme.typography.titleLarge, modifier=Modifier.padding(16.dp))
-                    Divider()
+                    HorizontalDivider()
                     uiState.availableRegions.forEach { region ->
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable { viewModel.selectRegion(region); showRegionModal = false }.padding(16.dp),
@@ -338,7 +338,7 @@ fun VoicesScreen(
              ModalBottomSheet(onDismissRequest = { showGenderModal = false }) {
                 Column(modifier = Modifier.padding(bottom=32.dp)) {
                     Text("Select Gender", style=MaterialTheme.typography.titleLarge, modifier=Modifier.padding(16.dp))
-                    Divider()
+                    HorizontalDivider()
                     listOf("Male", "Female").forEach { gender ->
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable { viewModel.selectGender(gender); showGenderModal = false }.padding(16.dp),
@@ -356,7 +356,7 @@ fun VoicesScreen(
              ModalBottomSheet(onDismissRequest = { showQualityModal = false }) {
                 Column(modifier = Modifier.padding(bottom=32.dp)) {
                     Text("Select Quality", style=MaterialTheme.typography.titleLarge, modifier=Modifier.padding(16.dp))
-                    Divider()
+                    HorizontalDivider()
                     uiState.availableQualities.forEach { quality ->
                         Row(
                             modifier = Modifier.fillMaxWidth().clickable { viewModel.selectQuality(quality); showQualityModal = false }.padding(16.dp),

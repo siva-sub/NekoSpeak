@@ -38,7 +38,7 @@ class PiperEngine(
 
     override suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
-            Log.i(TAG, "Initializing PiperEngine for voice: $voiceId")
+            Log.i(TAG, "PiperEngine: initializing voice $voiceId")
             
             val repo = com.nekospeak.tts.data.VoiceRepository(context)
             val files = repo.getLocalPath(voiceId)
@@ -49,23 +49,24 @@ class PiperEngine(
             }
             
             val (modelFile, jsonFile) = files
-            
-            // 1. Load Config
-            // If json file exists, load it. If bundled, we might need to verify if getLocalPath returns the extracted path or asset path logic?
-            // VoiceRepository.getLocalPath for bundled returns filesDir path.
-            // We must ensure they are extracted if they don't exist, similar to before.
-            // BUT VoiceRepository doesn't extract.
+            Log.v(TAG, "STEP 1: Files resolved. Model=${modelFile.absolutePath}, JSON=${jsonFile.absolutePath}")
             
             // Extraction Logic for Bundled Voice (Amy)
             if (voiceId == "en_US-amy-low") {
-                 // Hardcoded check for bundled extraction to ensure safety
                  if (!modelFile.exists()) {
-                     Log.i(TAG, "Extracting bundled model $voiceId...")
-                     context.assets.open("piper/$voiceId.onnx").use { input ->
-                         modelFile.outputStream().use { output -> input.copyTo(output) }
-                     }
-                     context.assets.open("piper/$voiceId.onnx.json").use { input ->
-                         jsonFile.outputStream().use { output -> input.copyTo(output) }
+                     Log.i(TAG, "Extracting bundled model $voiceId... (Asset Open)")
+                     try {
+                         context.assets.open("piper/$voiceId.onnx").use { input ->
+                             modelFile.outputStream().use { output -> input.copyTo(output) }
+                         }
+                         Log.v(TAG, "Model extracted.")
+                         context.assets.open("piper/$voiceId.onnx.json").use { input ->
+                             jsonFile.outputStream().use { output -> input.copyTo(output) }
+                         }
+                         Log.v(TAG, "JSON extracted.")
+                     } catch (e: Exception) {
+                         Log.e(TAG, "Asset extraction failed!", e)
+                         return@withContext false
                      }
                  }
             } else {
@@ -74,31 +75,53 @@ class PiperEngine(
                      return@withContext false
                  }
             }
+            Log.v(TAG, "STEP 2: Assets verified.")
             
             val jsonString = jsonFile.readText()
+            Log.v(TAG, "STEP 3: JSON read (${jsonString.length} chars). Parsing Gson...")
             config = Gson().fromJson(jsonString, PiperConfig::class.java)
+            if (config == null) {
+                 Log.e(TAG, "Gson returned null config!")
+                 return@withContext false
+            }
+            Log.v(TAG, "STEP 4: Config loaded. SampleRate=${config?.audio?.sampleRate}")
             
             // 2. Init ONNX
-            ortEnv = OrtEnvironment.getEnvironment()
-            val opts = OrtSession.SessionOptions().apply {
-                 setIntraOpNumThreads(4)
+            Log.v(TAG, "STEP 5: Initializing ONNX Environment...")
+            try {
+                ortEnv = OrtEnvironment.getEnvironment()
+                Log.v(TAG, "ONNX Environment created. Creating SessionOptions...")
+                val opts = OrtSession.SessionOptions().apply {
+                     setIntraOpNumThreads(4)
+                }
+                Log.v(TAG, "Creating ONNX Session from ${modelFile.absolutePath}...")
+                ortSession = ortEnv?.createSession(modelFile.absolutePath, opts)
+                Log.v(TAG, "ONNX Session created.")
+            } catch (e: Throwable) {
+                Log.e(TAG, "CRITICAL: ONNX Init Failed!", e)
+                throw e
             }
-            ortSession = ortEnv?.createSession(modelFile.absolutePath, opts)
+            Log.v(TAG, "STEP 6: ONNX Ready.")
             
             // 3. Init Espeak
+            Log.v(TAG, "STEP 7: Checking Espeak Data...")
              val dataDir = java.io.File(context.filesDir, "espeak-ng-data")
             if (!dataDir.exists()) {
+                 Log.v(TAG, "Extracting espeak-ng-data...")
                  com.nekospeak.tts.utils.AssetUtils.extractAssets(context, "espeak-ng-data", context.filesDir)
             }
+            Log.v(TAG, "Initializing EspeakWrapper JNI...")
             espeak = EspeakWrapper()
-            val res = espeak?.initialize(context.filesDir.absolutePath)
+            val res = espeak?.initializeSafe(context.filesDir.absolutePath)
             if (res == -1) {
-                Log.e(TAG, "Espeak init failed")
+                Log.e(TAG, "Espeak init failed (JNI returned -1)")
                 return@withContext false
             }
+            Log.v(TAG, "STEP 8: Espeak Ready.")
             
             // 4. Init Misaki G2P (for English voices only)
             val espeakVoice = config?.espeak?.voice ?: "en-us"
+            Log.v(TAG, "STEP 9: Init Misaki (Voice=$espeakVoice)...")
             if (espeakVoice.startsWith("en")) {
                 try {
                     val isBritish = espeakVoice.contains("gb")
@@ -108,7 +131,7 @@ class PiperEngine(
                     // Create G2P with eSpeak fallback
                     misakiG2P = G2P(misakiLexicon!!) { word ->
                         // Fallback: use eSpeak for unknown words
-                        val espeakPhonemes = espeak?.textToPhonemes(word, espeakVoice)
+                        val espeakPhonemes = espeak?.textToPhonemesSafe(word, espeakVoice)
                         espeakPhonemes
                     }
                     Log.i(TAG, "Misaki G2P initialized (british=$isBritish)")
@@ -151,7 +174,7 @@ class PiperEngine(
             Log.d(TAG, "Converted to IPA: $rawPhonemes")
         } else {
             // Fallback to pure eSpeak
-            rawPhonemes = espeak?.textToPhonemes(text, conf.espeak.voice) ?: ""
+            rawPhonemes = espeak?.textToPhonemesSafe(text, conf.espeak.voice) ?: ""
             Log.d(TAG, "eSpeak Phonemes: $rawPhonemes")
         }
         

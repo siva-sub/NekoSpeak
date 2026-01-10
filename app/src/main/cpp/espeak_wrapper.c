@@ -73,14 +73,6 @@ Java_com_nekospeak_tts_engine_EspeakWrapper_textToPhonemes(JNIEnv *env,
       LOGE("Phoneme buffer overflow");
       break;
     }
-
-    // espeak_TextToPhonemes updates text_ptr.
-    // If it points to null terminator or we are not making progress (logic
-    // check), break? Usually it returns NULL when done, but let's be safe.
-    // Wait, typical usage relies on text_ptr being updated to NULL eventually?
-    // Actually the docs say: "Returns NULL if end of text."
-    // So the phonemes check above handles the break.
-    // BUT, sometimes it returns "" and advances?
   }
 
   jstring result = (*env)->NewStringUTF(env, buffer);

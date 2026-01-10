@@ -33,7 +33,11 @@ class NekoTtsService : TextToSpeechService() {
         const val SAMPLE_RATE = 24000
     }
     
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val exceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
+        Log.e(TAG, "CRITICAL: Uncaught Coroutine Exception", throwable)
+    }
+
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + exceptionHandler)
     @Volatile private var currentEngine: TtsEngine? = null
     @Volatile private var stopRequested = false
     
@@ -73,8 +77,8 @@ class NekoTtsService : TextToSpeechService() {
     }
 
     private fun reloadEngine() {
-        // Cancel any pending init? No, just replace the reference.
-        // The old job will finish and return an engine that we might abandon or close.
+        // Cancel any pending init to avoid race conditions (especially with native libs)
+        initJob?.cancel()
         
         initJob = serviceScope.async(Dispatchers.IO) {
             Log.i(TAG, "Starting engine initialization (Async)...")
