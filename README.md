@@ -7,6 +7,7 @@
 *   **Offline First**: No internet connection required after initial model download.
 *   **Next-Gen Models**:
     *   **Kokoro**: High-quality, 82M parameter model offering natural prosody.
+    *   **Kitten**: A nano-sized (35M), ultra-low latency variant of Kokoro, perfect for older devices.
     *   **Piper**: Fast, lightweight neural TTS supporting a wide range of voices.
 *   **Android Integration**: Fully compliant `TextToSpeechService` implementation.
 *   **Customizable**: Adjust speed, voices, and thread usage for performance tuning.

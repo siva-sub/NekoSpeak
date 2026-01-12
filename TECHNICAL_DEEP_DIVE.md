@@ -70,20 +70,28 @@ interface TtsEngine {
 }
 ```
 
-### 2.3. Kokoro Engine (`KokoroEngine.kt`)
-Implementation for the Kokoro model, an 82M parameter TTS model.
+### 2.3. Kokoro & Kitten Engine (`KokoroEngine.kt`)
+This class manages inference for both the **Kokoro** (82M params) and **Kitten** (35M params, lower latency) models.
+
+-   **Model Selection**:
+    -   Based on `PrefsManager.currentModel`.
+    -   **Kokoro**: Uses `kokoro-v1.0.int8.onnx` and `voices-v1.0.bin`.
+    -   **Kitten**: Uses `kitten_tts_nano_v0_1.onnx` and `voices.npz`.
 
 -   **Data Flow**:
     1.  **Text Preprocessing**: Splits input text into sentences using regex to optimize for the model's context window.
-    2.  **Phonemization**: Uses a custom `Phonemizer` (likely wrapping a dictionary or simple rule-based system) to convert text to phonemes.
+    2.  **Phonemization**: Uses a custom `Phonemizer` to convert text to phonemes.
     3.  **Tokenization**: Maps phonemes to integer tokens compatible with the ONNX model.
     4.  **Batching Strategy**:
-        -   Accumulates tokens from multiple short sentences to fill the context window (`MAX_TOKENS = 150` or `400`).
+        -   **Kokoro**: Accumulates ~150 tokens per batch to balance context/latency.
+        -   **Kitten**: Uses a larger buffer of ~400 tokens due to its faster inference speed.
         -   **Critical Optimization**: Generating longer batches is more efficient than frequent short inference calls due to ONNX Runtime initialization overhead.
     5.  **Inference**:
         -   Inputs: `input_ids` (tokens), `style` (voice embedding vector), `speed`.
         -   Output: Audio waveform as a float tensor.
-    6.  **Trimming**: Applies heuristic silence trimming to the generated audio.
+    6.  **Trimming**: 
+        -   **Kokoro**: Heuristic silence trimming based on amplitude threshold.
+        -   **Kitten**: Fixed trimming (first 3000 and last 4000 samples) to remove model artifacts.
 
 ### 2.4. Piper Engine (`PiperEngine.kt`)
 Implementation for the Piper TTS architecture.
@@ -146,8 +154,11 @@ sequenceDiagram
 -   **Optimization Level**: Set to `ALL_OPT` to enable graph fusions and constant folding.
 
 ### 4.3. Asset Management
--   Models are shipped as assets (`kokoro-v1.0.int8.onnx`).
--   On first run, the app checks if the model exists in `filesDir` and extracts it only if missing or size mismatch defined by `modelFile.length() < 10MB`.
+-   Models are shipped as assets (`kokoro-v1.0.int8.onnx`, `kitten_tts_nano_v0_1.onnx`).
+-   **Extraction**: On first run, the app checks if the selected model exists in `filesDir` and extracts it only if missing or size mismatch (e.g., `length() < 10MB`).
+-   **Voice Packs**:
+    -   Kokoro uses a proprietary binary format (`.bin`) containing multiple voice styles.
+    -   Kitten uses a standard NumPy `.npz` archive.
 
 ## 5. Native Integration Details
 
