@@ -7,12 +7,15 @@ backgroundImage: url('https://marp.app/assets/hero-background.svg')
 style: |
   section {
     font-family: 'Inter', sans-serif;
+    font-size: 30px; /* Reduced base font size */
   }
   h1 {
     color: #2D3E50;
+    font-size: 1.5em;
   }
   h2 {
     color: #E74C3C;
+    font-size: 1.2em;
   }
   strong {
     color: #2980B9;
@@ -20,6 +23,7 @@ style: |
   img {
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    background-color: transparent;
   }
 ---
 
@@ -37,11 +41,11 @@ style: |
 
 # **The Problem** 📉
 
-Existing text-to-speech solutions on Android often force a compromise:
+Existing text-to-speech solutions release on Android often force a compromise:
 
 1.  **Robotic & Flat**: Older offline engines sound artificial (`espeak`).
 2.  **Privacy Invasive**: High-quality usually means sending data to the cloud.
-3.  **Latency**: Waiting for server responses breaks the flow of reading.
+3.  **Latency**: Waiting for server responses breaks the reading flow.
 
 > "AI should assist us without compromising our privacy or patience."
 
@@ -49,14 +53,14 @@ Existing text-to-speech solutions on Android often force a compromise:
 
 # **The Solution: NekoSpeak** 🚀
 
-A drop-in replacement for the system TTS engine that brings **State-of-the-Art AI** directly to your device.
+A drop-in replacement for system TTS that brings **State-of-the-Art AI** to the edge.
 
 *   **Triple Engine Core**:
     *   🧠 **Kokoro (82M)**: Human-level expressiveness.
     *   ⚡ **Piper**: Fast, multilingual support.
-    *   🏎️ **Kitten (Nano)**: Ultra-lightweight for older reliability.
+    *   🏎️ **Kitten (Nano)**: Ultra-lightweight reliability.
 *   **Privacy by Design**: Zero data leaves the device.
-*   **Universal Compatibility**: Works with @Voice, MoonReader, and accessibility tools.
+*   **Universal Compatibility**: Works with @Voice, MoonReader, etc.
 
 ---
 
@@ -65,21 +69,21 @@ A drop-in replacement for the system TTS engine that brings **State-of-the-Art A
 Building for the "Edge" requires specialized architecture:
 
 *   **ONNX Runtime**: Quantized models (int8) for CPU efficiency.
-*   **Native C++ Bridge**: Custom JNI wrappers for `espeak-ng` integration.
-*   **Smart Batching**: Dynamic token buffering to balance latency vs. context.
-*   **Kotlin Coroutines**: Non-blocking audio synthesis pipeline.
+*   **Native C++ Bridge**: Custom JNI wrappers for `espeak-ng`.
+*   **Smart Batching**: Dynamic token buffering.
+*   **Kotlin Coroutines**: Non-blocking audio pipeline.
 
-![w:900](slides_diagram.png)
+![w:900](arch_diagram.svg)
 
 ---
 
 # **Why I Built This** 💡
 
-My background in **Fintech & Innovation** (ex-BIS Innovation Hub) taught me that the best products solve complex technical problems with simple user experiences.
+My background in **Fintech & Innovation** (ex-BIS Innovation Hub) taught me that optimal products solve technical complexity with simple UX.
 
-*   **Offline First**: Exploring trade-offs in model size vs. user experience.
-*   **Accessibility**: Making high-quality AI voices available to everyone, free of charge.
-*   **Curiosity**: Pushing the limits of what a mobile CPU can do without a cloud GPU.
+*   **Offline First**: Balancing model size vs. user experience.
+*   **Accessibility**: High-quality AI voices for everyone, free of charge.
+*   **Curiosity**: Pushing mobile CPU limits without cloud GPUs.
 
 ---
 
