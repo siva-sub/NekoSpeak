@@ -67,11 +67,16 @@ A drop-in replacement for the Android TTS ecosystem, bringing heavily quantized 
 <div class="columns">
 <div>
 
-*   **Triple Engine Core**:
-    *   🧠 **Kokoro (82M)**: Human-like.
-    *   ⚡ **Piper**: Fast & Multilingual.
-    *   🏎️ **Kitten (Nano)**: Lightweight.
-*   **100% Offline**: No internet needed.
+### **Triple Engine Core**
+*   🧠 **Kokoro (82M)**:
+    Human-level expressiveness.
+*   ⚡ **Piper**:
+    High-speed, multilingual inference.
+*   🏎️ **Kitten (Nano)**:
+    Ultra-lightweight reliability.
+
+### **100% Offline**
+Zero latency. Privacy by design.
 
 </div>
 <div>
