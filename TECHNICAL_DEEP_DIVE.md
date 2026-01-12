@@ -9,32 +9,32 @@ NekoSpeak operates as a standard Android `TextToSpeechService`, exposing itself 
 ```mermaid
 graph TD
     subgraph "Android System"
-        A[Android System / TTS Client] -->|Intent: CHECK_TTS_DATA| B(CheckVoiceData)
-        A -->|Binder: onSynthesizeText| C{NekoTtsService}
+        Android[Android System / TTS Client] -->|Intent: CHECK_TTS_DATA| CheckAct(CheckVoiceData)
+        Android -->|Binder: onSynthesizeText| Service{NekoTtsService}
     end
 
     subgraph "Application Layer (Kotlin)"
-        C -->|Manage| D[TtsEngine Interface]
-        D -->|Impl| E[KokoroEngine]
-        D -->|Impl| F[PiperEngine]
-        C -->|Observe| G[PrefsManager]
+        Service -->|Manage| Engine[TtsEngine Interface]
+        Engine -->|Impl| Kokoro[KokoroEngine]
+        Engine -->|Impl| Piper[PiperEngine]
+        Service -->|Observe| Prefs[PrefsManager]
     end
 
     subgraph "Inference Layer (ONNX Runtime)"
-        E -->|Session.run| H[Kokoro ONNX Model]
-        F -->|Session.run| I[Piper ONNX Model]
+        Kokoro -->|Session.run| KModel[Kokoro ONNX Model]
+        Piper -->|Session.run| PModel[Piper ONNX Model]
     end
 
     subgraph "Native Layer (C/C++)"
-        F -->|JNI| J[EspeakWrapper]
-        J -->|dlopen| K[libespeak-ng.so]
-        E -->|JNI| L[Phonemizer]
+        Piper -->|JNI| Espeak[EspeakWrapper]
+        Espeak -->|dlopen| LibEspeak[libespeak-ng.so]
+        Kokoro -->|JNI| Phonemizer[Phonemizer]
     end
 
     subgraph "Data Layer"
-        G -->|Read/Write| M[SharedPreferences]
-        F -->|Read| N[Voice Data / Models]
-        E -->|Read| O[Voice Data / Models]
+        Prefs -->|Read/Write| SharedPrefs[SharedPreferences]
+        Piper -->|Read| VoiceData[Voice Data / Models]
+        Kokoro -->|Read| VoiceData
     end
 ```
 
@@ -46,26 +46,26 @@ NekoSpeak integrates with the Android Text-to-Speech framework via specific **In
 sequenceDiagram
     participant Sys as Android System
     participant App as 3rd Party App
-    participant Neko as NekoSpeak (Service)
-    participant Act as NekoSpeak (Activities)
+    participant Service as NekoTtsService
+    participant Act as Activities
 
-    Note over Sys, Neko: 1. Discovery & Handshake
+    Note over Sys, Service: 1. Discovery & Handshake
     Sys->>Act: Intent: CHECK_TTS_DATA
     Act-->>Sys: result = CHECK_VOICE_DATA_PASS (Indicates engine is ready)
 
-    Note over Sys, Neko: 2. Initialization
+    Note over Sys, Service: 2. Initialization
     App->>Sys: TextToSpeech(context, listener)
-    Sys->>Neko: bindService(Intent: TTS_SERVICE)
-    Neko-->>Sys: onBind() -> ITextToSpeechService.Stub
+    Sys->>Service: bindService(Intent: TTS_SERVICE)
+    Service-->>Sys: onBind() -> ITextToSpeechService.Stub
 
-    Note over Sys, Neko: 3. Session
-    Sys->>Neko: onIsLanguageAvailable("eng", "USA", "")
-    Neko-->>Sys: LANG_COUNTRY_AVAILABLE
-    Sys->>Neko: onLoadLanguage("eng", "USA", "")
-    Sys->>Neko: onSynthesizeText(text, params, callback)
-    Neko->>Neko: Generate Audio (PCM16)
-    Neko-->>Sys: audioAvailable(buffer)
-    Neko-->>Sys: done()
+    Note over Sys, Service: 3. Session
+    Sys->>Service: onIsLanguageAvailable("eng", "USA", "")
+    Service-->>Sys: LANG_COUNTRY_AVAILABLE
+    Sys->>Service: onLoadLanguage("eng", "USA", "")
+    Sys->>Service: onSynthesizeText(text, params, callback)
+    Service->>Service: Generate Audio (PCM16)
+    Service-->>Sys: audioAvailable(buffer)
+    Service-->>Sys: done()
 ```
 
 #### Key APIs & Intents
@@ -158,13 +158,13 @@ The following sequence diagram illustrates the path of a synthesis request:
 
 ```mermaid
 sequenceDiagram
-    participant Android as Android TTS
+    participant Sys as Android System
     participant Service as NekoTtsService
-    participant Engine as KokoroEngine
+    participant Engine as TtsEngine
     participant ORT as ONNX Runtime
     participant Callback as SynthesisCallback
 
-    Android->>Service: onSynthesizeText(text, params)
+    Sys->>Service: onSynthesizeText(text, params)
     Service->>Service: Resolve Voice & Speed
     Service->>Engine: generate(text, ...)
     

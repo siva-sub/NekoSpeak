@@ -1,5 +1,30 @@
 # NekoSpeak
 
+![Android](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)
+![Kotlin](https://img.shields.io/badge/kotlin-%237F52FF.svg?style=for-the-badge&logo=kotlin&logoColor=white)
+
+**NekoSpeak** is a high-performance, on-device Text-to-Speech (TTS) engine for Android, capable of running offline with low latency. It bridges the gap between modern AI voice synthesis and the standard Android TTS API.
+
+## 👤 Author
+**Sivasubramanian Ramanathan**
+*   [LinkedIn](https://www.linkedin.com/in/sivasub987)
+*   [Website](https://sivasub.com)
+
+## 📸 Screenshots
+
+| Onboarding | Voice Selection | Settings |
+|:---:|:---:|:---:|
+| ![Onboarding](screenshots/screenshot_onboarding_model.jpg) | ![Voice Selection](screenshots/screenshot_onboarding_voice.jpg) | ![Settings](screenshots/screenshot_settings.jpg) |
+
+| Voice Downloader | System Selection |
+|:---:|:---:|
+| ![Downloader](screenshots/screenshot_voice_downloader.jpg) | ![System](screenshots/screenshot_system_selection.jpg) |
+
+## ⬇️ Download
+The app is available for download in the [Releases](https://github.com/yourusername/NekoSpeak/releases) section.
+
+
+
 **NekoSpeak** is a high-performance, on-device Text-to-Speech (TTS) engine for Android, capable of running offline with low latency. It bridges the gap between modern AI voice synthesis and the standard Android TTS API, allowing it to be used as a drop-in replacement for Google TTS in any application (eLook reader, @Voice Aloud Reader, system accessibility, etc.).
 
 ## 🚀 Key Features
