@@ -1,7 +1,13 @@
 # NekoSpeak
 
-![Android](https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white)
-![Kotlin](https://img.shields.io/badge/kotlin-%237F52FF.svg?style=for-the-badge&logo=kotlin&logoColor=white)
+![Android](https://img.shields.io/badge/Android-35-green?style=flat&logo=android)
+![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-purple?style=flat&logo=kotlin)
+[![GitHub Release](https://img.shields.io/github/v/release/siva-sub/NekoSpeak)](https://github.com/siva-sub/NekoSpeak/releases)
+[![License](https://img.shields.io/github/license/siva-sub/NekoSpeak)](https://github.com/siva-sub/NekoSpeak/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/siva-sub/NekoSpeak?style=social)](https://github.com/siva-sub/NekoSpeak/stargazers)
+![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.18.0-blue)
+![CPU](https://img.shields.io/badge/CPU-supported-brightgreen)
+[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.10)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
 
 **NekoSpeak** is a high-performance, on-device Text-to-Speech (TTS) engine for Android, capable of running offline with low latency. It bridges the gap between modern AI voice synthesis and the standard Android TTS API.
 
