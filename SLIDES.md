@@ -69,13 +69,7 @@ Building for the "Edge" requires specialized architecture:
 *   **Smart Batching**: Dynamic token buffering to balance latency vs. context.
 *   **Kotlin Coroutines**: Non-blocking audio synthesis pipeline.
 
-```mermaid
-graph LR
-    App[User App] --> Intent[Android TTS API]
-    Intent --> Service[Neko Service]
-    Service --> ONNX[ONNX Runtime]
-    ONNX --> Audio[Audio Output]
-```
+![w:900](slides_diagram.png)
 
 ---
 
