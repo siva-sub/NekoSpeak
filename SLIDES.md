@@ -76,7 +76,7 @@ A drop-in replacement for the Android TTS ecosystem, bringing heavily quantized 
 </div>
 <div>
 
-![h:350](screenshots/screenshot_onboarding_model.jpg)
+![h:420](screenshots/screenshot_onboarding_model.jpg)
 
 </div>
 </div>
