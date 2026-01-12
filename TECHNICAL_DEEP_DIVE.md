@@ -38,6 +38,45 @@ graph TD
     end
 ```
 
+### 1.1. System Integration & APIs
+
+NekoSpeak integrates with the Android Text-to-Speech framework via specific **Intents** and **Service Bindings** defined in `AndroidManifest.xml`. This ensures seamless operation as a system-wide TTS provider.
+
+```mermaid
+sequenceDiagram
+    participant Sys as Android System
+    participant App as 3rd Party App
+    participant Neko as NekoSpeak (Service)
+    participant Act as NekoSpeak (Activities)
+
+    Note over Sys, Neko: 1. Discovery & Handshake
+    Sys->>Act: Intent: CHECK_TTS_DATA
+    Act-->>Sys: result = CHECK_VOICE_DATA_PASS (Indicates engine is ready)
+
+    Note over Sys, Neko: 2. Initialization
+    App->>Sys: TextToSpeech(context, listener)
+    Sys->>Neko: bindService(Intent: TTS_SERVICE)
+    Neko-->>Sys: onBind() -> ITextToSpeechService.Stub
+
+    Note over Sys, Neko: 3. Session
+    Sys->>Neko: onIsLanguageAvailable("eng", "USA", "")
+    Neko-->>Sys: LANG_COUNTRY_AVAILABLE
+    Sys->>Neko: onLoadLanguage("eng", "USA", "")
+    Sys->>Neko: onSynthesizeText(text, params, callback)
+    Neko->>Neko: Generate Audio (PCM16)
+    Neko-->>Sys: audioAvailable(buffer)
+    Neko-->>Sys: done()
+```
+
+#### Key APIs & Intents
+
+| Component | Intent Action | Purpose |
+| :--- | :--- | :--- |
+| **NekoTtsService** | `android.intent.action.TTS_SERVICE` | The core Binder interface. Allows the system to synthesize text, query voices, and stop playback. |
+| **CheckVoiceData** | `android.speech.tts.engine.CHECK_TTS_DATA` | Called by the system to verify if voice data is installed. NekoSpeak returns `CHECK_VOICE_DATA_PASS` if models are present (or auto-extracts them). |
+| **InstallVoiceData** | `android.speech.tts.engine.INSTALL_TTS_DATA` | Triggers the voice installation UI if `CHECK_TTS_DATA` fails (rarely used as we bundle/auto-extract assets). |
+| **GetSampleText** | `android.speech.tts.engine.GET_SAMPLE_TEXT` | Returns a localized sample string (e.g., "This is an example...") for the system settings preview. |
+
 ## 2. Component Analysis
 
 ### 2.1. NekoTtsService (`com.nekospeak.tts.NekoTtsService`)
