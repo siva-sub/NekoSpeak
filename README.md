@@ -5,10 +5,18 @@
 
 **NekoSpeak** is a high-performance, on-device Text-to-Speech (TTS) engine for Android, capable of running offline with low latency. It bridges the gap between modern AI voice synthesis and the standard Android TTS API.
 
-## 👤 Author
-**Sivasubramanian Ramanathan**
-*   [LinkedIn](https://www.linkedin.com/in/sivasub987)
-*   [Website](https://sivasub.com)
+## � Features
+
+*   **Triple Engine Support**:
+    *   **Kokoro v1.0 (82M)**: State-of-the-art expressive narration. Best for audiobooks and reading.
+    *   **Piper**: Fast, efficient, and multilingual. Supports hundreds of community voices (English, Tamil, Spanish, etc.).
+    *   **Kitten TTS Nano**: Extremely lightweight and fast. Ideal for older devices.
+*   **Privacy First**: All processing happens 100% on-device. No data is ever sent to the cloud.
+*   **System-Wide Integration**: Works with any Android app that supports TTS (MoonReader, @Voice, etc.).
+*   **Advanced Voice Management**:
+    *   **Cloud Voice Store**: Browse and download hundreds of Piper voices directly within the app.
+    *   **Quality Filters**: Filter voices by quality (x_low to high).
+    *   **Persistence**: Remembers your preferred voice and speed settings.
 
 ## 📸 Screenshots
 
@@ -20,60 +28,77 @@
 |:---:|:---:|
 | ![Downloader](screenshots/screenshot_voice_downloader.jpg) | ![System](screenshots/screenshot_system_selection.jpg) |
 
-## ⬇️ Download
-The app is available for download in the [Releases](https://github.com/yourusername/NekoSpeak/releases) section.
+## 📥 Download
 
+**v1.0.10 is now available!**
 
+> **Why is the APK size large?**
+> NekoSpeak comes pre-packaged with high-quality AI models (Kokoro-82M, Piper-Amy, Kitten-TTS-Nano) to ensure **100% offline functionality** right out of the box. No initial downloads required!
 
-**NekoSpeak** is a high-performance, on-device Text-to-Speech (TTS) engine for Android, capable of running offline with low latency. It bridges the gap between modern AI voice synthesis and the standard Android TTS API, allowing it to be used as a drop-in replacement for Google TTS in any application (eLook reader, @Voice Aloud Reader, system accessibility, etc.).
+*   **Universal** (239 MB): Works on all devices.
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.10/app-universal-release.apk)
+*   **arm64-v8a** (191 MB): Optimized for modern devices (Pixel, Samsung S-series).
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.10/app-arm64-v8a-release.apk)
+*   **armeabi-v7a** (186 MB): Optimized for older/low-end devices.
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.10/app-armeabi-v7a-release.apk)
 
-## 🚀 Key Features
+[**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.0.10)
 
-*   **Offline First**: No internet connection required after initial model download.
-*   **Next-Gen Models**:
-    *   **Kokoro**: High-quality, 82M parameter model offering natural prosody.
-    *   **Kitten**: A nano-sized (35M), ultra-low latency variant of Kokoro, perfect for older devices.
-    *   **Piper**: Fast, lightweight neural TTS supporting a wide range of voices.
-*   **Android Integration**: Fully compliant `TextToSpeechService` implementation.
-*   **Customizable**: Adjust speed, voices, and thread usage for performance tuning.
-*   **Open Source**: Built on ONNX Runtime and eSpeak-ng.
+## 📂 Project Structure
 
-## 🛠️ Technical Overview
+```text
+.
+├── app
+│   ├── src
+│   │   ├── main
+│   │   │   ├── java/com/nekospeak/tts  (Kotlin Source)
+│   │   │   ├── cpp/                    (Native C++ / JNI)
+│   │   │   ├── assets/                 (Bundled Models)
+│   │   │   └── res/                    (UI Resources)
+│   ├── build.gradle.kts                (App Build Config)
+├── gradle                              (Gradle Wrapper)
+├── build.gradle.kts                    (Root Build Config)
+└── README.md                           (Documentation)
+```
 
-NekoSpeak uses **ONNX Runtime** for inference and **JNI** to interface with native libraries like `espeak-ng` for phonemization.
+## 🛠️ Technical Details
 
-For a detailed architectural breakdown, component analysis, and data flow diagrams, please refer to the **[Technical Deep Dive](TECHNICAL_DEEP_DIVE.md)**.
+For a detailed architectural breakdown, component analysis, system integration diagrams, and ONNX implementation details, please refer to the **[Technical Deep Dive](TECHNICAL_DEEP_DIVE.md)**.
 
 ## 🏗️ Build Instructions
 
-### Prerequisites
-*   Android Studio Ladybug or newer.
-*   JDK 17+.
-*   Android NDK (Side-by-side) for building the C++ native wrappers.
+1.  Clone the repository.
+2.  Open in Android Studio (Ladybug+).
+3.  Build and Run (`Shift + F10`).
+    *   *Note: Ensure NDK is installed for C++ builds.*
 
-### Compilation
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/yourusername/NekoSpeak.git
-    cd NekoSpeak
-    ```
-2.  Open in Android Studio.
-3.  Sync Gradle project.
-4.  Build and Run (`Shift + F10`) on your target device.
+## Credits & Acknowledgements
 
-*Note: The project includes pre-built assets for the Kokoro model. Ensure your build has sufficient heap size if processing large assets.*
+We gratefully acknowledge the incredible work of the open-source AI community:
 
-## 📦 Usage
+*   **[Piper](https://github.com/rhasspy/piper)** & **[Piper Voices](https://huggingface.co/rhasspy/piper-voices)**
+    *   Thanks to the Rhasspy team for the amazing Piper architecture and the massive collection of high-quality voices.
+*   **[Piper Tamil Voice (Valluvar)](https://huggingface.co/datasets/Jeyaram-K/piper-tamil-voice)**
+    *   Special thanks to **Jeyaram-K** for training and providing the high-quality Tamil "Valluvar" model.
+*   **[Kokoro-ONNX](https://github.com/thewh1teagle/kokoro-onnx)**
+    *   Thanks to [thewh1teagle](https://github.com/thewh1teagle) for the inspiration and ONNX export work.
+*   **[KittenTTS](https://github.com/KittenML/KittenTTS)**
+    *   Thanks to the KittenML team for their work on efficient TTS architectures.
+*   **[Misaki](https://github.com/hexgrad/misaki)**
+    *   G2P logic ported from this excellent library.
+*   **[Espeak-NG](https://github.com/espeak-ng/espeak-ng)**
+    *   The backbone of multilingual phonemization.
 
-1.  **Install** the APK.
-2.  Go to Android **Settings** -> **System** -> **Languages & input** -> **Text-to-speech output**.
-3.  Select **NekoSpeak** as the preferred engine.
-4.  Tap the "Gear" icon to configure voices and models.
+## License
 
-## 🤝 Contributing
+**NekoSpeak** is licensed under the **MIT License**.
 
-Contributions are welcome! Please check the `TECHNICAL_DEEP_DIVE.md` to understand the architecture before submitting extensive changes.
+> **Note**: While the NekoSpeak application code is MIT, it bundles dependencies with their own licenses:
+> *   **Espeak-NG**: GPL v3.0
+> *   **ONNX Models**: Apache 2.0 / CC-BY-4.0 (Check specific model licenses)
 
-## 📜 License
+## Author
 
-NekoSpeak is open-source software. See [LICENSE](LICENSE) for details.
+Developed by **Sivasubramanian Ramanathan**
+*   [LinkedIn](https://www.linkedin.com/in/sivasub987/)
+*   [Website](https://sivasub.com/)
