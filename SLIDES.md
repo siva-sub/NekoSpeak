@@ -7,29 +7,44 @@ backgroundImage: url('https://marp.app/assets/hero-background.svg')
 style: |
   section {
     font-family: 'Inter', sans-serif;
-    font-size: 28px;
-    padding: 40px;
+    font-size: 26px; /* Slightly reduced for more content */
+    padding: 30px;
   }
-  h1 { color: #2D3E50; font-size: 1.6em; margin-bottom: 0.2em; }
-  h2 { color: #E74C3C; font-size: 1.1em; margin-bottom: 0.5em; }
+  h1 { color: #2D3E50; font-size: 1.5em; margin-bottom: 0.1em; }
+  h2 { color: #E74C3C; font-size: 1.1em; margin-bottom: 0.4em; }
   strong { color: #2980B9; }
-  blockquote { background: #f9f9f9; border-left: 10px solid #ccc; padding: 10px 20px; font-style: italic; font-size: 0.9em; }
+  blockquote { background: #f9f9f9; border-left: 8px solid #ccc; padding: 10px 15px; font-style: italic; font-size: 0.9em; }
   img { box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 8px; background-color: transparent; }
-  .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: center; }
   .small-text { font-size: 0.7em; }
   .center { text-align: center; }
+  .profile-box { background: #f0f4f8; padding: 15px; border-radius: 8px; font-size: 0.85em; }
 ---
 
 # **NekoSpeak** 🐱
 ## Engineering Intelligence at the Edge
 
-**100% Offline • Ultra Low Latency • Privacy First**
-
-<br>
+<div class="columns">
+<div>
 
 **Sivasubramanian Ramanathan**
-*Product Owner | Fintech & Digital Innovation*
-*(Ex-BIS Innovation Hub Singapore)*
+*Product Owner | Fintech & Innovation*
+*Ex-BIS Innovation Hub Singapore*
+
+**🌏 Seeking Opportunities in Singapore**
+I am looking for roles in **Product Management, Fintech, Payments, RegTech**, and **Digital Assets**.
+
+</div>
+<div class="profile-box">
+
+"I am not just a Product person. **I build.**"
+
+I have worked across product delivery, user research, and cross-agency collaboration. I enjoy solving complex problems and bringing structure to early ideas.
+
+**I care deeply about building products that create real impact.**
+
+</div>
+</div>
 
 ---
 
@@ -83,7 +98,7 @@ I architected a custom pipeline using **ONNX Runtime** and **C++ JNI Bridges** t
 
 Unlike simple "wrapper" apps, NekoSpeak integrates deep into the **Android Framework**.
 
-![w:900](sequence_flow.png)
+![h:400](sequence_flow.png)
 
 <p class="center small-text">It handles the full <code>CHECK_TTS_DATA</code> handshake, allowing it to power 3rd party apps (MoonReader, @Voice) system-wide.</p>
 
@@ -95,7 +110,7 @@ Polished UX focusing on accessibility and ease of use.
 
 | Voice Selection | Settings & Config |
 |:---:|:---:|
-| ![h:400](screenshots/screenshot_onboarding_voice.jpg) | ![h:400](screenshots/screenshot_settings.jpg) |
+| ![h:400](screenshots/screenshot_voice_downloader.jpg) | ![h:400](screenshots/screenshot_settings.jpg) |
 
 ---
 
@@ -119,9 +134,7 @@ This project reflects my approach to Product Engineering:
 
 I specialize in taking messy, real-world complexity and structuring it into reliable products.
 
-**I am looking for my next role in Singapore:** 🇸🇬
-*   **Focus**: Product Management, Payment Infrastructure, Digital Assets.
-*   **Value**: Bridging the gap between Policy, Tech, and Business.
+**Open for roles that sit between policy, technology, and stakeholder engagement.**
 
 ---
 
