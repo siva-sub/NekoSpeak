@@ -63,32 +63,58 @@ class KokoroEngine(private val context: Context) : TtsEngine {
             
             Log.i(TAG, "Initializing Engine. Model: $modelName, Threads: $threads")
             
-            // Select assets
-            currentModelInfo = if (modelName == "kitten_nano") {
+            // Select model files - Kokoro is downloaded to filesDir, Kitten might be bundled
+            val isKitten = (modelName == "kitten_nano")
+            currentModelInfo = if (isKitten) {
                 Triple(MODEL_KITTEN_ASSET, MODEL_KITTEN_FILE, VOICES_KITTEN_ASSET)
             } else {
                 Triple(MODEL_KOKORO_ASSET, MODEL_KOKORO_FILE, VOICES_KOKORO_ASSET)
             }
             
-            val (modelAsset, modelFileName, voicesAsset) = currentModelInfo
+            val (modelAsset, modelFileName, voicesAssetOrFile) = currentModelInfo
             
             phonemizer = Phonemizer(context)
             phonemizer?.load()
             ortEnv = OrtEnvironment.getEnvironment()
             
+            // Model file path - Kokoro downloads to filesDir root, Kitten to kitten subfolder
             val modelFile = File(context.filesDir, modelFileName)
-            if (!modelFile.exists() || modelFile.length() < 10 * 1024 * 1024) { // check > 10MB
-                Log.i(TAG, "Extracting model $modelFileName...")
-                context.assets.open(modelAsset).use { input ->
-                    modelFile.outputStream().use { output ->
-                        input.copyTo(output, bufferSize = 8192)
+            
+            if (!modelFile.exists() || modelFile.length() < 10 * 1024 * 1024) {
+                // Try to extract from assets (works for bundled models like Kitten)
+                try {
+                    Log.i(TAG, "Extracting model $modelFileName from assets...")
+                    context.assets.open(modelAsset).use { input ->
+                        modelFile.outputStream().use { output ->
+                            input.copyTo(output, bufferSize = 8192)
+                        }
                     }
+                } catch (e: Exception) {
+                    // Not bundled - should be downloaded via ModelRepository
+                    Log.e(TAG, "Model not found: $modelFileName. Download required via Settings.")
+                    return@withContext false
                 }
             }
             
-            // Scan voices
+            // Scan voices - try filesDir first (downloaded), then assets (bundled)
             availableVoices.clear()
-            context.assets.open(voicesAsset).use { fis ->
+            val voicesFile = File(context.filesDir, voicesAssetOrFile)
+            
+            val voicesInput: java.io.InputStream = if (voicesFile.exists()) {
+                Log.i(TAG, "Loading voices from downloaded file: ${voicesFile.absolutePath}")
+                voicesFile.inputStream()
+            } else {
+                // Try assets (for bundled models)
+                try {
+                    Log.i(TAG, "Loading voices from assets: $voicesAssetOrFile")
+                    context.assets.open(voicesAssetOrFile)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Voices not found: $voicesAssetOrFile. Download required via Settings.")
+                    return@withContext false
+                }
+            }
+            
+            voicesInput.use { fis ->
                 ZipInputStream(fis).use { zis ->
                     var entry = zis.nextEntry
                     while (entry != null) {
@@ -100,7 +126,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                 }
             }
             availableVoices.sort()
-            Log.i(TAG, "Found ${availableVoices.size} voices in $voicesAsset")
+            Log.i(TAG, "Found ${availableVoices.size} voices")
             
             val options = OrtSession.SessionOptions().apply {
                 setIntraOpNumThreads(threads)
@@ -144,9 +170,17 @@ class KokoroEngine(private val context: Context) : TtsEngine {
     
     private fun loadVoice(name: String): FloatArray {
         voiceCache[name]?.let { return it }
-        val voicesAsset = currentModelInfo.third
+        val voicesAssetOrFile = currentModelInfo.third
         
-        context.assets.open(voicesAsset).use { fis ->
+        // Try filesDir first (downloaded), then assets (bundled)
+        val voicesFile = File(context.filesDir, voicesAssetOrFile)
+        val voicesInput: java.io.InputStream = if (voicesFile.exists()) {
+            voicesFile.inputStream()
+        } else {
+            context.assets.open(voicesAssetOrFile)
+        }
+        
+        voicesInput.use { fis ->
             ZipInputStream(fis).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
