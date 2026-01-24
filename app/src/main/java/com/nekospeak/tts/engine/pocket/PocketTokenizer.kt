@@ -200,15 +200,16 @@ class PocketTokenizer(private val context: Context) {
      * The model handles these internally.
      * 
      * @param text Input text
+     * @param skipPreprocessing If true, skip punctuation/capitalization preprocessing
      * @return LongArray of token IDs
      */
-    fun encode(text: String): LongArray {
+    fun encode(text: String, skipPreprocessing: Boolean = false): LongArray {
         if (!isLoaded) {
             throw IllegalStateException("Tokenizer not loaded")
         }
         
-        // Preprocess text (matching reference implementation)
-        val processedText = preprocessText(text)
+        // Optionally preprocess text (can be controlled by engine layer)
+        val processedText = if (skipPreprocessing) text.trim() else preprocessText(text)
         
         // Normalize: add word boundary marker at the start and after spaces
         val normalized = normalizeText(processedText)
@@ -255,55 +256,102 @@ class PocketTokenizer(private val context: Context) {
     }
     
     /**
-     * Tokenize using greedy longest-match (simplified Unigram).
+     * Tokenize using Viterbi algorithm for proper Unigram language model.
      * 
-     * For proper Unigram, we'd use Viterbi with scores, but greedy
-     * longest-match works well enough for TTS and is much simpler.
+     * This finds the best tokenization by maximizing the sum of log-probabilities (scores)
+     * using dynamic programming. O(n * maxLen) complexity.
      */
     private fun tokenize(text: String): List<Int> {
-        val tokens = mutableListOf<Int>()
-        var pos = 0
+        if (text.isEmpty()) return emptyList()
         
-        while (pos < text.length) {
-            // Try to find the longest matching token
-            var bestLen = 0
-            var bestTokenId = unkTokenId
+        val n = text.length
+        val maxLen = 32  // Maximum token length
+        
+        // DP arrays: best score and backpointer to achieve it
+        val bestScore = FloatArray(n + 1) { Float.NEGATIVE_INFINITY }
+        val bestLen = IntArray(n + 1) { 0 }
+        val bestTokenId = IntArray(n + 1) { unkTokenId }
+        bestScore[0] = 0f
+        
+        // Forward pass: find best path
+        for (pos in 0 until n) {
+            if (bestScore[pos] == Float.NEGATIVE_INFINITY) continue
             
-            // Check substrings from longest to shortest
-            val maxLen = minOf(32, text.length - pos) // Max token length
-            for (len in maxLen downTo 1) {
+            // Try all possible token lengths at this position
+            val remainingLen = minOf(maxLen, n - pos)
+            for (len in 1..remainingLen) {
                 val substr = text.substring(pos, pos + len)
                 val tokenInfo = vocabulary[substr]
+                
                 if (tokenInfo != null) {
-                    bestLen = len
-                    bestTokenId = tokenInfo.first
-                    break
+                    val (tokenId, score) = tokenInfo
+                    val newScore = bestScore[pos] + score
+                    
+                    if (newScore > bestScore[pos + len]) {
+                        bestScore[pos + len] = newScore
+                        bestLen[pos + len] = len
+                        bestTokenId[pos + len] = tokenId
+                    }
                 }
             }
             
-            if (bestLen > 0) {
-                tokens.add(bestTokenId)
-                pos += bestLen
-            } else {
-                // No match: use byte fallback or UNK
-                val char = text[pos]
-                val bytes = char.toString().toByteArray(Charsets.UTF_8)
+            // If no token matches at all, use byte fallback (score = -10)
+            if (bestScore[pos + 1] == Float.NEGATIVE_INFINITY) {
+                // Handle Unicode code point properly (for emoji/surrogates)
+                val codePoint = Character.codePointAt(text, pos)
+                val charCount = Character.charCount(codePoint)
+                val cpBytes = String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8)
                 
-                if (bytes.size == 1 && byteFallbackTokens.containsKey(bytes[0].toInt() and 0xFF)) {
-                    tokens.add(byteFallbackTokens[bytes[0].toInt() and 0xFF]!!)
-                } else {
-                    // Use byte fallback for each byte
-                    for (b in bytes) {
-                        val byteValue = b.toInt() and 0xFF
-                        val fallbackToken = byteFallbackTokens[byteValue]
-                        if (fallbackToken != null) {
-                            tokens.add(fallbackToken)
-                        } else {
-                            tokens.add(unkTokenId)
-                        }
+                // Use byte fallback tokens
+                var fallbackScore = bestScore[pos]
+                for (b in cpBytes) {
+                    val byteValue = b.toInt() and 0xFF
+                    val fallbackToken = byteFallbackTokens[byteValue]
+                    if (fallbackToken != null) {
+                        fallbackScore += -10f  // Penalty for byte fallback
                     }
                 }
-                pos++
+                
+                val endPos = pos + charCount
+                if (endPos <= n && fallbackScore > bestScore[endPos]) {
+                    bestScore[endPos] = fallbackScore
+                    bestLen[endPos] = charCount
+                    bestTokenId[endPos] = -1  // Marker for byte fallback
+                }
+            }
+        }
+        
+        // Backward pass: reconstruct best path
+        val tokens = mutableListOf<Int>()
+        var pos = n
+        
+        while (pos > 0) {
+            val len = bestLen[pos]
+            val tokenId = bestTokenId[pos]
+            
+            if (len == 0) {
+                // Fallback: couldn't find path, use UNK for remaining
+                tokens.add(0, unkTokenId)
+                pos--
+            } else if (tokenId == -1) {
+                // Byte fallback case
+                val startPos = pos - len
+                val codePoint = Character.codePointAt(text, startPos)
+                val cpBytes = String(Character.toChars(codePoint)).toByteArray(Charsets.UTF_8)
+                
+                for (b in cpBytes.reversed()) {
+                    val byteValue = b.toInt() and 0xFF
+                    val fallbackToken = byteFallbackTokens[byteValue]
+                    if (fallbackToken != null) {
+                        tokens.add(0, fallbackToken)
+                    } else {
+                        tokens.add(0, unkTokenId)
+                    }
+                }
+                pos = startPos
+            } else {
+                tokens.add(0, tokenId)
+                pos -= len
             }
         }
         

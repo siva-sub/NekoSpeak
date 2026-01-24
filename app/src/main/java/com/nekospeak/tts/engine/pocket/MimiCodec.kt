@@ -11,8 +11,9 @@ import java.nio.LongBuffer
 /**
  * Wrapper for the Mimi audio codec (encoder/decoder).
  * 
- * - Encoder: Converts audio waveform to speaker latents for voice cloning
- * - Decoder: Converts generated latents back to audio waveform
+ * - Encoder: Converts audio waveform to speaker embeddings for voice cloning
+ *            (Note: This is not codec latents - it's 1024-dim speaker representation)
+ * - Decoder: Converts generated 32-dim latents back to audio waveform
  */
 class MimiCodec(
     private val encoder: OrtSession,
@@ -29,13 +30,16 @@ class MimiCodec(
     private var decoderState: MutableMap<String, Pair<String, Any>>? = null
     
     /**
-     * Encode audio waveform to speaker latents for voice cloning.
+     * Encode audio waveform to speaker embeddings for voice cloning.
+     * 
+     * Note: This returns speaker embeddings (1024-dim), not codec latents (32-dim).
+     * The output is used for conditioning the TTS model, not for codec decoding.
      * 
      * @param audio FloatArray of audio samples at 24kHz mono
-     * @return Pair of (latents FloatArray, numFrames Int)
+     * @return Pair of (embeddings FloatArray [frames * 1024], numFrames Int)
      */
-    fun encode(audio: FloatArray): Pair<FloatArray, Int> {
-        Log.d(TAG, "Encoding ${audio.size} audio samples...")
+    fun encodeSpeaker(audio: FloatArray): Pair<FloatArray, Int> {
+        Log.d(TAG, "Encoding speaker embeddings from ${audio.size} audio samples...")
         
         var audioTensor: OnnxTensor? = null
         var outputs: OrtSession.Result? = null

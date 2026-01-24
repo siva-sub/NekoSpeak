@@ -1054,7 +1054,7 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
                         
                         // Send latent to decoder via channel (non-blocking with buffer)
                         latentChannel.send(latent)
-                        allLatents.add(latent)
+                        // Note: We don't store allLatents in streaming mode - saves memory for long utterances
                         generatedFrames++
                         currentLatent = latent
                     }
