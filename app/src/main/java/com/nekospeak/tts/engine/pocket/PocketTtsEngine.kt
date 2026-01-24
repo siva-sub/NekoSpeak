@@ -865,8 +865,7 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
         Log.d(TAG, "Generating speech for: '${text.take(50)}...' with voice: $voiceName")
         
         try {
-            // Initialize decoder and flow LM state
-            codec.initDecoderState()
+            // Initialize flow LM state for conditioning
             initFlowLmState()
             
             // Tokenize text
@@ -1441,10 +1440,10 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
         voicesDir.mkdirs()
         File(voicesDir, "$voiceId.bin").writeBytes(voiceState.toBytes())
         
-        // Also cache the embeddings like we do for celebrity voices
-        val cacheDir = File(context.cacheDir, "pocket")
-        cacheDir.mkdirs()
-        saveCachedEmbedding(File(cacheDir, "$voiceId.emb"), latents, numFrames)
+        // Also cache the embeddings like we do for bundled voices (use same path)
+        val embCacheDir = File(context.filesDir, VOICE_CACHE_DIR)
+        embCacheDir.mkdirs()
+        saveCachedEmbedding(File(embCacheDir, "$voiceId.emb"), latents, numFrames)
         
         // Add to runtime cache
         voiceStates[voiceId] = voiceState
