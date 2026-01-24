@@ -244,11 +244,14 @@ class PocketTokenizer(private val context: Context) {
     
     /**
      * Normalize text for SentencePiece.
-     * Replaces spaces with the word boundary marker (▁).
+     * - Apply NFKC Unicode normalization (standard SentencePiece behavior)
+     * - Replace spaces with the word boundary marker (▁)
      */
     private fun normalizeText(text: String): String {
+        // NFKC normalization (standard for SentencePiece)
+        val nfkc = java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFKC)
         // SentencePiece: word boundary at start and after each space
-        return WORD_BOUNDARY + text.replace(" ", WORD_BOUNDARY)
+        return WORD_BOUNDARY + nfkc.replace(" ", WORD_BOUNDARY)
     }
     
     /**

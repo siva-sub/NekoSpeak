@@ -37,30 +37,37 @@ class MimiCodec(
     fun encode(audio: FloatArray): Pair<FloatArray, Int> {
         Log.d(TAG, "Encoding ${audio.size} audio samples...")
         
-        // Input shape: [1, 1, audio_len]
-        val audioTensor = OnnxTensor.createTensor(
-            env,
-            FloatBuffer.wrap(audio),
-            longArrayOf(1, 1, audio.size.toLong())
-        )
+        var audioTensor: OnnxTensor? = null
+        var outputs: OrtSession.Result? = null
         
-        val outputs = encoder.run(mapOf("audio" to audioTensor))
-        val latentsTensor = outputs[0] as OnnxTensor
-        
-        // Output shape: [1, frames, 32]
-        val shape = latentsTensor.info.shape
-        val numFrames = shape[1].toInt()
-        
-        val result = latentsTensor.floatBuffer.let { buf ->
-            FloatArray(buf.remaining()).also { buf.get(it) }
+        try {
+            // Input shape: [1, 1, audio_len]
+            audioTensor = OnnxTensor.createTensor(
+                env,
+                FloatBuffer.wrap(audio),
+                longArrayOf(1, 1, audio.size.toLong())
+            )
+            
+            outputs = encoder.run(mapOf("audio" to audioTensor))
+            val latentsTensor = outputs[0] as? OnnxTensor
+                ?: throw IllegalStateException("Encoder output is not OnnxTensor")
+            
+            // Output shape: [1, frames, 32]
+            val shape = latentsTensor.info.shape
+            val numFrames = shape[1].toInt()
+            
+            val result = latentsTensor.floatBuffer.let { buf ->
+                FloatArray(buf.remaining()).also { buf.get(it) }
+            }
+            
+            Log.d(TAG, "Encoded to $numFrames frames (${result.size} floats)")
+            
+            return Pair(result, numFrames)
+            
+        } finally {
+            audioTensor?.close()
+            outputs?.close()
         }
-        
-        Log.d(TAG, "Encoded to $numFrames frames (${result.size} floats)")
-        
-        audioTensor.close()
-        outputs.close()
-        
-        return Pair(result, numFrames)
     }
     
     /**
@@ -107,91 +114,101 @@ class MimiCodec(
             decoderState!!
         }
         
-        // Build inputs
         val inputs = mutableMapOf<String, OnnxTensor>()
+        var outputs: OrtSession.Result? = null
         
-        // Latent input: [1, T, 32]
-        inputs["latent"] = OnnxTensor.createTensor(
-            env,
-            FloatBuffer.wrap(latent),
-            longArrayOf(1, numFrames.toLong(), LATENT_DIM.toLong())
-        )
-        
-        // Add state inputs with proper typing
-        currentState.forEach { (name, typeAndData) ->
-            val (type, data) = typeAndData
-            val stateInfo = decoder.inputInfo[name]?.info as? ai.onnxruntime.TensorInfo ?: return@forEach
+        try {
+            // Latent input: [1, T, 32]
+            inputs["latent"] = OnnxTensor.createTensor(
+                env,
+                FloatBuffer.wrap(latent),
+                longArrayOf(1, numFrames.toLong(), LATENT_DIM.toLong())
+            )
             
-            inputs[name] = when {
-                type.contains("bool", ignoreCase = true) -> {
-                    // ONNX Runtime expects boolean as byte array
-                    OnnxTensor.createTensor(
-                        env,
-                        ByteBuffer.wrap(data as ByteArray),
-                        stateInfo.shape,
-                        ai.onnxruntime.OnnxJavaType.BOOL
-                    )
-                }
-                type.contains("int64", ignoreCase = true) -> {
-                    OnnxTensor.createTensor(
-                        env,
-                        LongBuffer.wrap(data as LongArray),
-                        stateInfo.shape
-                    )
-                }
-                else -> {
-                    OnnxTensor.createTensor(
-                        env,
-                        FloatBuffer.wrap(data as FloatArray),
-                        stateInfo.shape
-                    )
+            // Add state inputs with proper typing
+            currentState.forEach { (name, typeAndData) ->
+                val (type, data) = typeAndData
+                val stateInfo = decoder.inputInfo[name]?.info as? ai.onnxruntime.TensorInfo ?: return@forEach
+                
+                inputs[name] = when {
+                    type.contains("bool", ignoreCase = true) -> {
+                        OnnxTensor.createTensor(
+                            env,
+                            ByteBuffer.wrap(data as ByteArray),
+                            stateInfo.shape,
+                            ai.onnxruntime.OnnxJavaType.BOOL
+                        )
+                    }
+                    type.contains("int64", ignoreCase = true) -> {
+                        OnnxTensor.createTensor(
+                            env,
+                            LongBuffer.wrap(data as LongArray),
+                            stateInfo.shape
+                        )
+                    }
+                    else -> {
+                        OnnxTensor.createTensor(
+                            env,
+                            FloatBuffer.wrap(data as FloatArray),
+                            stateInfo.shape
+                        )
+                    }
                 }
             }
-        }
-        
-        val outputs = decoder.run(inputs)
-        
-        // Extract audio (first output)
-        val audioTensor = outputs[0] as OnnxTensor
-        val audio = audioTensor.floatBuffer.let { buf ->
-            FloatArray(buf.remaining()).also { buf.get(it) }
-        }
-        
-        // Update decoder state from outputs (critical for avoiding garbling)
-        // Reference impl: for k, val in enumerate(res[1:]): mimi_state[f"state_{k}"] = val
-        // This means: output at index 1 -> state_0, output at index 2 -> state_1, etc.
-        val outputNames = decoder.outputNames.toList()
-        for (k in 0 until (outputNames.size - 1)) {
-            val outputIdx = k + 1  // Skip first output (audio)
-            val outputName = outputNames[outputIdx]
-            val stateName = "state_$k"
-            val typeAndData = currentState[stateName] ?: continue
             
-            val stateResult = outputs.get(outputName)
-            val stateTensor = stateResult?.get() as? OnnxTensor ?: continue
+            outputs = decoder.run(inputs)
             
-            val newData: Any = when {
-                typeAndData.first.contains("bool", ignoreCase = true) -> {
-                    val buf = stateTensor.byteBuffer
-                    ByteArray(buf.remaining()).also { buf.get(it) }
+            // Extract audio (first output)
+            val audioTensor = outputs[0] as? OnnxTensor
+                ?: throw IllegalStateException("Decoder audio output is not OnnxTensor")
+            val audio = audioTensor.floatBuffer.let { buf ->
+                FloatArray(buf.remaining()).also { buf.get(it) }
+            }
+            
+            // Update decoder state from outputs using name-based lookup
+            // Look for outputs named "out_state_N" or matching state_N pattern
+            decoder.outputNames.forEach { outputName ->
+                // Try pattern: out_state_N -> state_N
+                val stateIdx = when {
+                    outputName.startsWith("out_state_") -> 
+                        outputName.removePrefix("out_state_").toIntOrNull()
+                    outputName.startsWith("state_") -> 
+                        outputName.removePrefix("state_").toIntOrNull()
+                    else -> null
                 }
-                typeAndData.first.contains("int64", ignoreCase = true) -> {
-                    val buf = stateTensor.longBuffer
-                    LongArray(buf.remaining()).also { buf.get(it) }
-                }
-                else -> {
-                    val buf = stateTensor.floatBuffer
-                    FloatArray(buf.remaining()).also { buf.get(it) }
+                
+                if (stateIdx != null) {
+                    val stateName = "state_$stateIdx"
+                    val typeAndData = currentState[stateName] ?: return@forEach
+                    
+                    val stateResult = outputs!!.get(outputName)
+                    val stateTensor = stateResult?.get() as? OnnxTensor ?: return@forEach
+                    
+                    val newData: Any = when {
+                        typeAndData.first.contains("bool", ignoreCase = true) -> {
+                            val buf = stateTensor.byteBuffer
+                            ByteArray(buf.remaining()).also { buf.get(it) }
+                        }
+                        typeAndData.first.contains("int64", ignoreCase = true) -> {
+                            val buf = stateTensor.longBuffer
+                            LongArray(buf.remaining()).also { buf.get(it) }
+                        }
+                        else -> {
+                            val buf = stateTensor.floatBuffer
+                            FloatArray(buf.remaining()).also { buf.get(it) }
+                        }
+                    }
+                    currentState[stateName] = Pair(typeAndData.first, newData)
                 }
             }
-            currentState[stateName] = Pair(typeAndData.first, newData)
+            
+            return audio
+            
+        } finally {
+            // Cleanup: close all input tensors, then close outputs
+            inputs.values.forEach { tensor -> tensor.close() }
+            outputs?.close()
         }
-        
-        // Cleanup
-        inputs.values.forEach { (it as OnnxTensor).close() }
-        outputs.close()
-        
-        return audio
     }
     
     /**
