@@ -2,6 +2,16 @@ package com.nekospeak.tts.engine.misaki
 
 import java.util.regex.Pattern
 
+/**
+ * Output mode for phonemize() - determines post-processing.
+ * KOKORO: Applies Kokoro-specific conversions (ɾ→T, ʔ→t)
+ * IPA: Returns standard IPA (for Piper/eSpeak compatibility)
+ */
+enum class OutputMode {
+    KOKORO,
+    IPA
+}
+
 class G2P(private val lexicon: Lexicon, private val fallback: ((String) -> String?)? = null) {
 
     // Regex adaptations
@@ -106,7 +116,8 @@ class G2P(private val lexicon: Lexicon, private val fallback: ((String) -> Strin
         val matcher = LINK_REGEX.matcher(text)
         val sb = StringBuffer()
         while(matcher.find()) {
-             matcher.appendReplacement(sb, matcher.group(1) ?: "")
+             // Must quote replacement to handle $ or \ in matched text
+             matcher.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(matcher.group(1) ?: ""))
         }
         matcher.appendTail(sb)
         var processedText = sb.toString()
@@ -121,7 +132,8 @@ class G2P(private val lexicon: Lexicon, private val fallback: ((String) -> Strin
                  if (numStr.length < 18) {
                      val num = numStr.toLong()
                      val words = com.nekospeak.tts.engine.misaki.Num2Words.convert(num)
-                     numMatcher.appendReplacement(sbNum, words)
+                     // Must quote replacement to handle $ or \ in number words
+                     numMatcher.appendReplacement(sbNum, java.util.regex.Matcher.quoteReplacement(words))
                  }
              } catch (e: Exception) {
                  // ignore conversion errors
@@ -156,7 +168,7 @@ class G2P(private val lexicon: Lexicon, private val fallback: ((String) -> Strin
          return result
     }
 
-    fun phonemize(text: String): String {
+    fun phonemize(text: String, mode: OutputMode = OutputMode.KOKORO): String {
         // 1. Preprocess
         val (preprocessedText, tokens, features) = preprocess(text)
         
@@ -201,11 +213,12 @@ class G2P(private val lexicon: Lexicon, private val fallback: ((String) -> Strin
             result.append(token.whitespace)
         }
         
-        // Post-processing
-        return result.toString()
-            .replace("ɾ", "T")
-            .replace("ʔ", "t")
-            .trim()
+        // Post-processing based on output mode
+        val out = result.toString().trim()
+        return when (mode) {
+            OutputMode.KOKORO -> out.replace("ɾ", "T").replace("ʔ", "t")
+            OutputMode.IPA -> out  // Keep standard IPA for Piper
+        }
     }
 
     private fun tokenContext(ctx: TokenContext, ps: String?, token: MToken): TokenContext {

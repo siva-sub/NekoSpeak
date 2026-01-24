@@ -6,6 +6,7 @@ import com.google.gson.Gson
 import com.nekospeak.tts.engine.EspeakWrapper
 import com.nekospeak.tts.engine.TtsEngine
 import com.nekospeak.tts.engine.misaki.G2P
+import com.nekospeak.tts.engine.misaki.OutputMode
 import com.nekospeak.tts.engine.misaki.Lexicon
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
@@ -172,11 +173,12 @@ class PiperEngine(
         // Fall back to eSpeak if Misaki not available or non-English
         val rawPhonemes: String
         if (misakiG2P != null) {
-            val misakiResult = misakiG2P!!.phonemize(text)
+            // Use IPA mode to get standard IPA output (no Kokoro-specific conversions)
+            val misakiResult = misakiG2P!!.phonemize(text, OutputMode.IPA)
             // Convert Misaki phonemes to Piper IPA
             rawPhonemes = MisakiToPiperIPA.convert(misakiResult)
-            Log.d(TAG, "Misaki Phonemes: $misakiResult")
-            Log.d(TAG, "Converted to IPA: $rawPhonemes")
+            Log.d(TAG, "Misaki Phonemes (IPA mode): $misakiResult")
+            Log.d(TAG, "Converted to Piper IPA: $rawPhonemes")
         } else {
             // Fallback to pure eSpeak
             rawPhonemes = espeak?.textToPhonemesSafe(text, conf.espeak.voice) ?: ""
