@@ -109,10 +109,14 @@ We gratefully acknowledge the incredible work of the open-source AI community:
 
 *   **[Pocket-TTS (Original Model)](https://github.com/kyutai-labs/pocket-tts)**
     *   Thanks to **Kyutai Labs** for the original Pocket-TTS model and default voices.
-*   **[Pocket-TTS-ONNX](https://huggingface.co/KevinAHM/pocket-tts-onnx)**
-    *   Thanks to **KevinAHM** for the ONNX export and reference implementation that made this Android port possible.
+*   **[Pocket-TTS ONNX Export](https://github.com/KevinAHM/pocket-tts-onnx-export)** & **[Models](https://huggingface.co/KevinAHM/pocket-tts-onnx)**
+    *   Thanks to **KevinAHM** for the ONNX export tool and reference implementation that made this Android port possible.
 *   **[Celebrity Voice Dataset](https://huggingface.co/datasets/sdialog/voices-celebrities)**
     *   Thanks to **sdialog** for the celebrity voice samples used for voice cloning.
+*   **[Kokoro-ONNX](https://github.com/thewh1teagle/kokoro-onnx)**
+    *   Thanks to [thewh1teagle](https://github.com/thewh1teagle) for the inspiration and ONNX export work.
+*   **[KittenTTS](https://github.com/KittenML/KittenTTS)**
+    *   Thanks to the KittenML team for their work on efficient TTS architectures.
 *   **[Piper](https://github.com/rhasspy/piper)** & **[Piper Voices](https://huggingface.co/rhasspy/piper-voices)**
     *   Thanks to the Rhasspy team for the amazing Piper architecture and the massive collection of high-quality voices.
 *   **[Piper Tamil Voice (Valluvar)](https://huggingface.co/datasets/Jeyaram-K/piper-tamil-voice)**
