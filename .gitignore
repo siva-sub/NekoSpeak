@@ -37,3 +37,21 @@ build/
 
 # Reference
 piper_onnx_ref/
+
+# Logs and temporary files
+build_log.txt
+logs.txt
+*.txt.bak
+
+# Old/deprecated screenshots and diagrams (moved to screenshots/)
+screenshot_1.png
+screenshot_settings.png
+screenshot_voices.png
+diagram_render.html
+arch_overview.png
+sequence_flow.png
+arch_diagram.svg
+NekoSpeak Android System Sequence diagram .png
+
+# Scripts (development only)
+scripts/

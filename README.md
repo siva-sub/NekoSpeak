@@ -107,12 +107,16 @@ For a detailed architectural breakdown, component analysis, system integration d
 
 We gratefully acknowledge the incredible work of the open-source AI community:
 
+*   **[Pocket-TTS (Original Model)](https://github.com/kyutai-labs/pocket-tts)**
+    *   Thanks to **Kyutai Labs** for the original Pocket-TTS model and default voices.
+*   **[Pocket-TTS-ONNX](https://huggingface.co/KevinAHM/pocket-tts-onnx)**
+    *   Thanks to **KevinAHM** for the ONNX export and reference implementation that made this Android port possible.
+*   **[Celebrity Voice Dataset](https://huggingface.co/datasets/sdialog/voices-celebrities)**
+    *   Thanks to **sdialog** for the celebrity voice samples used for voice cloning.
 *   **[Piper](https://github.com/rhasspy/piper)** & **[Piper Voices](https://huggingface.co/rhasspy/piper-voices)**
     *   Thanks to the Rhasspy team for the amazing Piper architecture and the massive collection of high-quality voices.
 *   **[Piper Tamil Voice (Valluvar)](https://huggingface.co/datasets/Jeyaram-K/piper-tamil-voice)**
     *   Special thanks to **Jeyaram-K** for training and providing the high-quality Tamil "Valluvar" model.
-*   **[Pocket-TTS-ONNX](https://huggingface.co/KevinAHM/pocket-tts-onnx)**
-    *   Thanks to **KevinAHM** for the excellent ONNX export and reference implementation.
 *   **[Misaki](https://github.com/hexgrad/misaki)**
     *   G2P logic ported from this excellent library.
 *   **[Espeak-NG](https://github.com/espeak-ng/espeak-ng)**
