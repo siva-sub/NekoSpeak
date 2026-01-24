@@ -62,7 +62,6 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
     private var mimiDecoder: OrtSession? = null
     
     private var mimiCodec: MimiCodec? = null
-    private var odeSolver: OdeSolver? = null
     private var tokenizer: PocketTokenizer? = null
     private var gtcrnDenoiser: GtcrnDenoiser? = null
     
@@ -77,9 +76,6 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
     // Flow LM state (for autoregressive generation) - map of state name to tensor data
     // Each entry has: name -> Pair(type: String, data: Any) where data is FloatArray or LongArray
     private var flowLmState: MutableMap<String, Pair<String, Any>>? = null
-    
-    // Voice embedding cache - avoid re-encoding same voice file
-    private val voiceEmbeddingCache = mutableMapOf<String, Pair<FloatArray, Int>>()
     
     // Pre-computed flow buffers for Euler integration (s/t time steps)
     // Computed once per lsdSteps value to avoid repeated allocation
@@ -203,9 +199,8 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
             flowLmFlow = loadModel(modelsDir, MODEL_FLOW_LM_FLOW, sessionOptions)
             mimiDecoder = loadModel(modelsDir, MODEL_MIMI_DECODER, sessionOptions)
             
-            // Initialize codec and solver
+            // Initialize codec
             mimiCodec = MimiCodec(mimiEncoder!!, mimiDecoder!!, ortEnv!!)
-            odeSolver = OdeSolver(flowLmFlow!!, ortEnv!!, ODE_STEPS)
             
             // Initialize tokenizer
             tokenizer = PocketTokenizer(context)
@@ -606,6 +601,8 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
      * - Convert to mono (average channels if stereo)
      * - Resample to 24kHz
      * - Normalize to [-1, 1] range
+     * 
+     * This implementation properly scans WAV chunks (fmt, data) rather than assuming offset=44.
      */
     private fun loadAudioFile(file: File): FloatArray? {
         try {
@@ -613,32 +610,68 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
             val audioBytes = inputStream.readBytes()
             inputStream.close()
             
-            // Parse WAV header and extract raw PCM samples
-            // WAV format: RIFF header (44 bytes minimum) + data
-            if (audioBytes.size < 44) {
+            // Validate RIFF header
+            if (audioBytes.size < 12) {
                 Log.e(TAG, "WAV file too small: ${audioBytes.size} bytes")
                 return null
             }
             
-            // Read sample rate from WAV header (bytes 24-27)
-            val sampleRate = (audioBytes[24].toInt() and 0xFF) or
-                           ((audioBytes[25].toInt() and 0xFF) shl 8) or
-                           ((audioBytes[26].toInt() and 0xFF) shl 16) or
-                           ((audioBytes[27].toInt() and 0xFF) shl 24)
+            val riff = String(audioBytes, 0, 4, Charsets.US_ASCII)
+            val wave = String(audioBytes, 8, 4, Charsets.US_ASCII)
+            if (riff != "RIFF" || wave != "WAVE") {
+                Log.e(TAG, "Invalid WAV header: RIFF='$riff', WAVE='$wave'")
+                return null
+            }
             
-            // Read bits per sample (bytes 34-35)
-            val bitsPerSample = (audioBytes[34].toInt() and 0xFF) or
-                               ((audioBytes[35].toInt() and 0xFF) shl 8)
+            // Scan for fmt and data chunks
+            var offset = 12
+            var audioFormat = 1  // 1=PCM, 3=IEEE Float
+            var numChannels = 1
+            var sampleRate = 44100
+            var bitsPerSample = 16
+            var dataOffset = -1
+            var dataSize = 0
             
-            // Read number of channels (bytes 22-23)
-            val numChannels = (audioBytes[22].toInt() and 0xFF) or
-                             ((audioBytes[23].toInt() and 0xFF) shl 8)
+            while (offset < audioBytes.size - 8) {
+                val chunkId = String(audioBytes, offset, 4, Charsets.US_ASCII)
+                val chunkSize = readInt32LE(audioBytes, offset + 4)
+                
+                when (chunkId) {
+                    "fmt " -> {
+                        // fmt chunk: format info
+                        if (offset + 8 + 16 <= audioBytes.size) {
+                            audioFormat = readInt16LE(audioBytes, offset + 8)
+                            numChannels = readInt16LE(audioBytes, offset + 10)
+                            sampleRate = readInt32LE(audioBytes, offset + 12)
+                            // Skip byteRate (4 bytes) and blockAlign (2 bytes)
+                            bitsPerSample = readInt16LE(audioBytes, offset + 22)
+                            Log.d(TAG, "WAV fmt: format=$audioFormat, $sampleRate Hz, $bitsPerSample bits, $numChannels ch")
+                        }
+                    }
+                    "data" -> {
+                        dataOffset = offset + 8
+                        dataSize = chunkSize
+                        Log.d(TAG, "WAV data: offset=$dataOffset, size=$dataSize")
+                        break  // Found data, stop scanning
+                    }
+                    // Skip other chunks (LIST, JUNK, fact, etc.)
+                }
+                
+                // Move to next chunk (align to word boundary)
+                offset += 8 + chunkSize
+                if (chunkSize % 2 == 1) offset++  // Padding byte
+            }
             
-            Log.d(TAG, "WAV: $sampleRate Hz, $bitsPerSample bits, $numChannels channels")
+            if (dataOffset < 0 || dataSize <= 0) {
+                Log.e(TAG, "Could not find data chunk in WAV file")
+                return null
+            }
             
-            // Find data chunk
-            val dataOffset = 44
-            val dataSize = audioBytes.size - 44
+            // Validate data range
+            if (dataOffset + dataSize > audioBytes.size) {
+                dataSize = audioBytes.size - dataOffset
+                Log.w(TAG, "WAV data chunk extends beyond file, truncating to $dataSize")
+            }
             
             // Extract PCM samples
             val bytesPerSample = bitsPerSample / 8
@@ -646,6 +679,7 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
             
             // Process samples - convert stereo to mono if needed
             var samples = FloatArray(numSamplesPerChannel)
+            val isFloat = (audioFormat == 3)  // IEEE float format
             
             for (i in 0 until numSamplesPerChannel) {
                 val baseOffset = dataOffset + i * bytesPerSample * numChannels
@@ -653,13 +687,13 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
                 
                 if (numChannels == 1) {
                     // Mono: just read the sample
-                    samples[i] = readPcmSample(audioBytes, baseOffset, bitsPerSample)
+                    samples[i] = readPcmSample(audioBytes, baseOffset, bitsPerSample, isFloat)
                 } else {
                     // Stereo or multi-channel: average all channels (reference uses mean)
                     var sum = 0f
                     for (ch in 0 until numChannels) {
-                        val offset = baseOffset + ch * bytesPerSample
-                        sum += readPcmSample(audioBytes, offset, bitsPerSample)
+                        val chOffset = baseOffset + ch * bytesPerSample
+                        sum += readPcmSample(audioBytes, chOffset, bitsPerSample, isFloat)
                     }
                     samples[i] = sum / numChannels
                 }
@@ -688,34 +722,62 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
         }
     }
     
+    /** Read 16-bit little-endian integer */
+    private fun readInt16LE(bytes: ByteArray, offset: Int): Int {
+        return (bytes[offset].toInt() and 0xFF) or
+               ((bytes[offset + 1].toInt() and 0xFF) shl 8)
+    }
+    
+    /** Read 32-bit little-endian integer */
+    private fun readInt32LE(bytes: ByteArray, offset: Int): Int {
+        return (bytes[offset].toInt() and 0xFF) or
+               ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+               ((bytes[offset + 2].toInt() and 0xFF) shl 16) or
+               ((bytes[offset + 3].toInt() and 0xFF) shl 24)
+    }
+    
     /**
      * Read a single PCM sample from audio bytes.
+     * 
+     * @param isFloat If true and bitsPerSample=32, interpret as IEEE float; otherwise as int32 PCM.
      */
-    private fun readPcmSample(audioBytes: ByteArray, offset: Int, bitsPerSample: Int): Float {
+    private fun readPcmSample(audioBytes: ByteArray, offset: Int, bitsPerSample: Int, isFloat: Boolean = false): Float {
         return when (bitsPerSample) {
             16 -> {
+                // 16-bit signed PCM, little-endian
                 val low = audioBytes[offset].toInt() and 0xFF
                 val high = audioBytes[offset + 1].toInt()
                 ((high shl 8) or low).toShort().toFloat() / 32768f
             }
             24 -> {
+                // 24-bit signed PCM, little-endian
+                // Must sign-extend from bit 23 to full 32-bit int
                 val b0 = audioBytes[offset].toInt() and 0xFF
                 val b1 = audioBytes[offset + 1].toInt() and 0xFF
-                val b2 = audioBytes[offset + 2].toInt()
-                val sample = (b2 shl 16) or (b1 shl 8) or b0
+                val b2 = audioBytes[offset + 2].toInt() and 0xFF
+                var sample = (b2 shl 16) or (b1 shl 8) or b0
+                // Sign extend: if bit 23 is set, extend with 0xFF
+                if ((sample and 0x800000) != 0) {
+                    sample = sample or 0xFF000000.toInt()
+                }
                 sample.toFloat() / 8388608f // 2^23
             }
             32 -> {
-                // 32-bit float
                 val bits = (audioBytes[offset].toInt() and 0xFF) or
                           ((audioBytes[offset + 1].toInt() and 0xFF) shl 8) or
                           ((audioBytes[offset + 2].toInt() and 0xFF) shl 16) or
                           ((audioBytes[offset + 3].toInt() and 0xFF) shl 24)
-                java.lang.Float.intBitsToFloat(bits)
+                if (isFloat) {
+                    // 32-bit IEEE float
+                    java.lang.Float.intBitsToFloat(bits)
+                } else {
+                    // 32-bit signed PCM integer
+                    bits.toFloat() / 2147483648f // 2^31
+                }
             }
             else -> {
-                // 8-bit PCM (unsigned)
-                (audioBytes[offset].toInt() - 128) / 128f
+                // 8-bit PCM (unsigned, centered at 128)
+                (audioBytes[offset].toInt() and 0xFF - 128) / 128f
             }
         }
     }
@@ -1074,23 +1136,29 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
     }
     
     private fun runTextConditioner(session: OrtSession, tokens: LongArray): FloatArray {
-        val tokensTensor = OnnxTensor.createTensor(
-            ortEnv!!,
-            LongBuffer.wrap(tokens),
-            longArrayOf(1, tokens.size.toLong())
-        )
+        var tokensTensor: OnnxTensor? = null
+        var outputs: OrtSession.Result? = null
         
-        val outputs = session.run(mapOf("token_ids" to tokensTensor))
-        val embeddingsTensor = outputs[0] as OnnxTensor
-        
-        val embeddings = embeddingsTensor.floatBuffer.let { buf ->
-            FloatArray(buf.remaining()).also { buf.get(it) }
+        try {
+            tokensTensor = OnnxTensor.createTensor(
+                ortEnv!!,
+                LongBuffer.wrap(tokens),
+                longArrayOf(1, tokens.size.toLong())
+            )
+            
+            outputs = session.run(mapOf("token_ids" to tokensTensor))
+            
+            // Get embeddings via floatBuffer (more robust than casting)
+            val embeddingsTensor = outputs[0] as? OnnxTensor
+                ?: throw IllegalStateException("Text conditioner output is not OnnxTensor")
+            
+            return embeddingsTensor.floatBuffer.let { buf ->
+                FloatArray(buf.remaining()).also { buf.get(it) }
+            }
+        } finally {
+            tokensTensor?.close()
+            outputs?.close()
         }
-        
-        tokensTensor.close()
-        outputs.close()
-        
-        return embeddings
     }
     
     /**
@@ -1111,88 +1179,93 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
         numEmbeddings: Int
     ): Pair<FloatArray, Float> {
         val inputs = mutableMapOf<String, OnnxTensor>()
+        var outputs: OrtSession.Result? = null
         
-        // Sequence input: [1, T, 32] - latent frames
-        inputs["sequence"] = OnnxTensor.createTensor(
-            ortEnv!!,
-            FloatBuffer.wrap(sequence),
-            longArrayOf(1, numSeqFrames.toLong(), LATENT_DIM.toLong())
-        )
-        
-        // Text embeddings: [1, T, 1024] - voice or text embeddings
-        inputs["text_embeddings"] = OnnxTensor.createTensor(
-            ortEnv!!,
-            FloatBuffer.wrap(embeddings),
-            longArrayOf(1, numEmbeddings.toLong(), EMBED_DIM.toLong())
-        )
-        
-        // Add state inputs
-        flowLmState?.forEach { (name, typeAndData) ->
-            val (type, data) = typeAndData
-            val stateInfo = session.inputInfo[name]?.info as? ai.onnxruntime.TensorInfo
-            stateInfo?.let { info ->
-                inputs[name] = when {
-                    type.contains("int64", ignoreCase = true) || type.contains("INT64") -> OnnxTensor.createTensor(
-                        ortEnv!!,
-                        java.nio.LongBuffer.wrap(data as LongArray),
-                        info.shape
-                    )
-                    else -> OnnxTensor.createTensor(
-                        ortEnv!!,
-                        FloatBuffer.wrap(data as FloatArray),
-                        info.shape
-                    )
-                }
-            }
-        }
-        
-        val outputs = session.run(inputs)
-        
-        // Get conditioning [1, 1, dim] -> [dim]
-        val conditioningResult = outputs.get("conditioning")
-        val conditioningTensor = conditioningResult?.get() as? OnnxTensor
-        val conditioning = conditioningTensor?.floatBuffer?.let { buf ->
-            FloatArray(buf.remaining()).also { buf.get(it) }
-        } ?: FloatArray(EMBED_DIM)
-        
-        // Get EOS logit [1, 1]
-        val eosLogitResult = outputs.get("eos_logit")
-        val eosLogitTensor = eosLogitResult?.get() as? OnnxTensor
-        val eosLogit = eosLogitTensor?.floatBuffer?.get() ?: -10f
-        
-        // Update state from outputs (critical for proper generation)
-        // Reference impl: for i in range(2, len(outputs)): if out_state_N -> state_N
-        // FlowLM has: [0]=conditioning, [1]=eos_logit, [2+]=states
-        val outputList = session.outputNames.toList()
-        for (i in 2 until outputList.size) {
-            val outName = outputList[i]
-            if (outName.startsWith("out_state_")) {
-                val stateIdx = outName.removePrefix("out_state_").toIntOrNull() ?: continue
-                val stateName = "state_$stateIdx"
-                val typeAndData = flowLmState?.get(stateName) ?: continue
-                
-                val stateResult = outputs.get(outName)
-                val stateTensor = stateResult?.get() as? OnnxTensor ?: continue
-                
-                val newData: Any = when {
-                    typeAndData.first.contains("int64", ignoreCase = true) -> {
-                        val buf = stateTensor.longBuffer
-                        LongArray(buf.remaining()).also { buf.get(it) }
-                    }
-                    else -> {
-                        val buf = stateTensor.floatBuffer
-                        FloatArray(buf.remaining()).also { buf.get(it) }
+        try {
+            // Sequence input: [1, T, 32] - latent frames
+            inputs["sequence"] = OnnxTensor.createTensor(
+                ortEnv!!,
+                FloatBuffer.wrap(sequence),
+                longArrayOf(1, numSeqFrames.toLong(), LATENT_DIM.toLong())
+            )
+            
+            // Text embeddings: [1, T, 1024] - voice or text embeddings
+            inputs["text_embeddings"] = OnnxTensor.createTensor(
+                ortEnv!!,
+                FloatBuffer.wrap(embeddings),
+                longArrayOf(1, numEmbeddings.toLong(), EMBED_DIM.toLong())
+            )
+            
+            // Add state inputs
+            flowLmState?.forEach { (name, typeAndData) ->
+                val (type, data) = typeAndData
+                val stateInfo = session.inputInfo[name]?.info as? ai.onnxruntime.TensorInfo
+                stateInfo?.let { info ->
+                    inputs[name] = when {
+                        type.contains("int64", ignoreCase = true) || type.contains("INT64") -> OnnxTensor.createTensor(
+                            ortEnv!!,
+                            java.nio.LongBuffer.wrap(data as LongArray),
+                            info.shape
+                        )
+                        else -> OnnxTensor.createTensor(
+                            ortEnv!!,
+                            FloatBuffer.wrap(data as FloatArray),
+                            info.shape
+                        )
                     }
                 }
-                flowLmState!![stateName] = Pair(typeAndData.first, newData)
             }
+            
+            outputs = session.run(inputs)
+            
+            // Get conditioning [1, 1, dim] -> [dim]
+            // Note: OrtSession.Result owns the output tensors, closing Result closes them
+            val conditioningResult = outputs.get("conditioning")
+            val conditioningTensor = conditioningResult?.get() as? OnnxTensor
+            val conditioning = conditioningTensor?.floatBuffer?.let { buf ->
+                FloatArray(buf.remaining()).also { buf.get(it) }
+            } ?: FloatArray(EMBED_DIM)
+            
+            // Get EOS logit [1, 1]
+            val eosLogitResult = outputs.get("eos_logit")
+            val eosLogitTensor = eosLogitResult?.get() as? OnnxTensor
+            val eosLogit = eosLogitTensor?.floatBuffer?.get() ?: -10f
+            
+            // Update state from outputs (critical for proper generation)
+            // Reference impl: for i in range(2, len(outputs)): if out_state_N -> state_N
+            // FlowLM has: [0]=conditioning, [1]=eos_logit, [2+]=states
+            val outputList = session.outputNames.toList()
+            for (i in 2 until outputList.size) {
+                val outName = outputList[i]
+                if (outName.startsWith("out_state_")) {
+                    val stateIdx = outName.removePrefix("out_state_").toIntOrNull() ?: continue
+                    val stateName = "state_$stateIdx"
+                    val typeAndData = flowLmState?.get(stateName) ?: continue
+                    
+                    val stateResult = outputs.get(outName)
+                    val stateTensor = stateResult?.get() as? OnnxTensor ?: continue
+                    
+                    val newData: Any = when {
+                        typeAndData.first.contains("int64", ignoreCase = true) -> {
+                            val buf = stateTensor.longBuffer
+                            LongArray(buf.remaining()).also { buf.get(it) }
+                        }
+                        else -> {
+                            val buf = stateTensor.floatBuffer
+                            FloatArray(buf.remaining()).also { buf.get(it) }
+                        }
+                    }
+                    flowLmState!![stateName] = Pair(typeAndData.first, newData)
+                }
+            }
+            
+            return Pair(conditioning, eosLogit)
+            
+        } finally {
+            // Cleanup: close all input tensors, then close outputs (which owns output tensors)
+            inputs.values.forEach { tensor -> tensor.close() }
+            outputs?.close()
         }
-        
-        // Cleanup
-        inputs.values.forEach { (it as OnnxTensor).close() }
-        outputs.close()
-        
-        return Pair(conditioning, eosLogit)
     }
     
     /**
@@ -1232,45 +1305,52 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
             }
         }
         
-        // Euler integration over flow network using pre-computed buffers
-        for (j in 0 until steps) {
-            val (sArr, tArr) = flowBuffers[j]
-            
-            val inputs = mapOf(
-                "c" to OnnxTensor.createTensor(
-                    ortEnv!!,
-                    FloatBuffer.wrap(conditioning),
-                    longArrayOf(1, EMBED_DIM.toLong())
-                ),
-                "s" to OnnxTensor.createTensor(
-                    ortEnv!!,
-                    FloatBuffer.wrap(sArr),
-                    longArrayOf(1, 1)
-                ),
-                "t" to OnnxTensor.createTensor(
-                    ortEnv!!,
-                    FloatBuffer.wrap(tArr),
-                    longArrayOf(1, 1)
-                ),
-                "x" to OnnxTensor.createTensor(
-                    ortEnv!!,
-                    FloatBuffer.wrap(x),
-                    longArrayOf(1, LATENT_DIM.toLong())
-                )
+        // Cache conditioning tensor once per frame (it never changes across steps)
+        var cTensor: OnnxTensor? = null
+        
+        try {
+            cTensor = OnnxTensor.createTensor(
+                ortEnv!!,
+                FloatBuffer.wrap(conditioning),
+                longArrayOf(1, EMBED_DIM.toLong())
             )
             
-            val outputs = session.run(inputs)
-            val flowOutput = (outputs[0] as OnnxTensor).floatBuffer.let { buf ->
-                FloatArray(buf.remaining()).also { buf.get(it) }
+            // Euler integration over flow network
+            for (j in 0 until steps) {
+                val (sArr, tArr) = flowBuffers[j]
+                
+                var sTensor: OnnxTensor? = null
+                var tTensor: OnnxTensor? = null
+                var xTensor: OnnxTensor? = null
+                var outputs: OrtSession.Result? = null
+                
+                try {
+                    sTensor = OnnxTensor.createTensor(ortEnv!!, FloatBuffer.wrap(sArr), longArrayOf(1, 1))
+                    tTensor = OnnxTensor.createTensor(ortEnv!!, FloatBuffer.wrap(tArr), longArrayOf(1, 1))
+                    xTensor = OnnxTensor.createTensor(ortEnv!!, FloatBuffer.wrap(x), longArrayOf(1, LATENT_DIM.toLong()))
+                    
+                    val inputs = mapOf("c" to cTensor, "s" to sTensor, "t" to tTensor, "x" to xTensor)
+                    outputs = session.run(inputs)
+                    
+                    val flowOutput = (outputs[0] as? OnnxTensor)?.floatBuffer?.let { buf ->
+                        FloatArray(buf.remaining()).also { buf.get(it) }
+                    } ?: FloatArray(LATENT_DIM)
+                    
+                    // Euler step: x = x + flow_output * dt
+                    for (i in x.indices) {
+                        x[i] = x[i] + flowOutput[i] * dt
+                    }
+                } finally {
+                    // Close per-step tensors (NOT cTensor which is reused)
+                    sTensor?.close()
+                    tTensor?.close()
+                    xTensor?.close()
+                    outputs?.close()
+                }
             }
-            
-            // Euler step: x = x + flow_output * dt
-            for (i in x.indices) {
-                x[i] = x[i] + flowOutput[i] * dt
-            }
-            
-            inputs.values.forEach { (it as OnnxTensor).close() }
-            outputs.close()
+        } finally {
+            // Close conditioning tensor after all steps complete
+            cTensor?.close()
         }
         
         return x
@@ -1285,6 +1365,8 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
             if (name.startsWith("state_")) {
                 val tensorInfo = info.info as? ai.onnxruntime.TensorInfo ?: return@forEach
                 val shape = tensorInfo.shape
+                // Dynamic dims (-1) become 0 intentionally: initial state is empty KV cache
+                // The model grows these during autoregressive generation
                 val size = shape.fold(1L) { acc, dim -> acc * if (dim < 0) 0 else dim }.toInt().coerceAtLeast(0)
                 val type = tensorInfo.type.toString()
                 
@@ -1437,7 +1519,6 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
         mimiDecoder = null
         ortEnv = null
         mimiCodec = null
-        odeSolver = null
         
         initialized = false
         Log.i(TAG, "Pocket-TTS Engine released")
