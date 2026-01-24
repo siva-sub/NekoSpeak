@@ -66,11 +66,11 @@ The first and foremost consideration was **fully offline functionality** - no in
 > **Why is the APK size large?**
 > NekoSpeak comes pre-packaged with the Piper engine and Amy Low voice to ensure **100% offline functionality** right out of the box. The Pocket-TTS model is downloaded separately on first use.
 
-*   **Universal** (~142 MB): Works on all devices.
+*   **Universal** (135 MB): Works on all devices.
     *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-universal-release.apk)
-*   **arm64-v8a** (~92 MB): Optimized for modern devices (Pixel, Samsung S-series).
+*   **arm64-v8a** (87.6 MB): Optimized for modern devices (Pixel, Samsung S-series).
     *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-arm64-v8a-release.apk)
-*   **armeabi-v7a** (~86 MB): Optimized for older/low-end devices.
+*   **armeabi-v7a** (82.2 MB): Optimized for older/low-end devices.
     *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-armeabi-v7a-release.apk)
 
 [**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.1.0)

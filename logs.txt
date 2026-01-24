@@ -1,5 +1,0 @@
-01-09 12:08:51.988  3294  3624 I AppsFilter: interaction: PackageSetting{c9f50f5 com.google.mediapipe.examples.llminference/10588} -> PackageSetting{e04073b com.nekospeak.tts/10730} BLOCKED
-01-09 12:08:51.992  3294  3624 I AppsFilter: interaction: PackageSetting{c9f50f5 com.google.mediapipe.examples.llminference/10588} -> PackageSetting{e04073b com.nekospeak.tts/10730} BLOCKED
-01-09 12:09:31.220  3294  3624 I AppsFilter: interaction: PackageSetting{c9f50f5 com.google.mediapipe.examples.llminference/10588} -> PackageSetting{db48209 com.facebook.appmanager/10254} BLOCKED
-01-09 12:10:23.226 14733 14809 D KokoroEngine: First batch inference: 18653ms
-01-09 12:10:23.273 14733 14809 D KokoroEngine: G2P time: 40ms for 346 tokens
