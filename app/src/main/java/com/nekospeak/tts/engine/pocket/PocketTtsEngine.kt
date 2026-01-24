@@ -861,9 +861,64 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
         }
         
         val voiceName = voice ?: currentVoice
-        val voiceState = voiceStates[voiceName] ?: run {
-            Log.w(TAG, "Voice not found: $voiceName, falling back to alba")
-            voiceStates["alba"] ?: return@withContext
+        var voiceState = voiceStates[voiceName]
+        
+        // On-demand encoding: If voice not loaded but WAV file exists, encode it now
+        if (voiceState == null) {
+            Log.d(TAG, "Voice $voiceName not in voiceStates, checking for downloadable/cloned voice...")
+            
+            // Check celebrity download directory
+            val celebrityWav = File(context.filesDir, "pocket/downloaded_voices/$voiceName.wav")
+            // Check cloned voices directory  
+            val clonedFile = File(context.filesDir, "pocket/cloned_voices/$voiceName.bin")
+            
+            if (celebrityWav.exists()) {
+                Log.i(TAG, "Found celebrity WAV, encoding on-demand: $voiceName")
+                val encoder = mimiEncoder
+                if (encoder != null) {
+                    val cacheDir = File(context.cacheDir, "pocket")
+                    cacheDir.mkdirs()
+                    val cacheFile = File(cacheDir, "$voiceName.emb")
+                    
+                    val embeddings = if (cacheFile.exists()) {
+                        loadCachedEmbedding(cacheFile)
+                    } else {
+                        val encoded = encodeVoiceFromWav(celebrityWav, encoder)
+                        if (encoded != null) {
+                            saveCachedEmbedding(cacheFile, encoded.first, encoded.second)
+                        }
+                        encoded
+                    }
+                    
+                    if (embeddings != null) {
+                        voiceState = PocketVoiceState(
+                            id = voiceName,
+                            displayName = voiceName.replace("_", " ").replaceFirstChar { it.uppercase() },
+                            latents = embeddings.first,
+                            numFrames = embeddings.second,
+                            isBundled = false
+                        )
+                        voiceStates[voiceName] = voiceState
+                        Log.i(TAG, "On-demand encoded celebrity voice: $voiceName (${embeddings.second} frames)")
+                    }
+                }
+            } else if (clonedFile.exists()) {
+                Log.i(TAG, "Found cloned voice file, loading: $voiceName")
+                try {
+                    val state = PocketVoiceState.fromBytes(clonedFile.readBytes())
+                    voiceStates[state.id] = state
+                    voiceState = state
+                    Log.i(TAG, "On-demand loaded cloned voice: $voiceName")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to load cloned voice: $voiceName", e)
+                }
+            }
+        }
+        
+        // Final fallback to alba if still not found
+        if (voiceState == null) {
+            Log.w(TAG, "Voice not found after on-demand check: $voiceName, falling back to alba")
+            voiceState = voiceStates["alba"] ?: return@withContext
         }
         
         Log.d(TAG, "Generating speech for: '${text.take(50)}...' with voice: $voiceName")
