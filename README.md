@@ -39,14 +39,15 @@ The first and foremost consideration was **fully offline functionality** - no in
 
 ## 📦 Bundled Models
 
-> **Why only Amy Low?** We bundle only the **Piper Amy Low** voice (~63MB) instead of larger models like Kokoro (~115MB). Kitten TTS Nano (~23MB) is available but was removed from default bundling because despite being small, the audio quality wasn't satisfactory for most use cases. We recommend using **Pocket-TTS** for the best quality experience - download the model (~176MB) on first launch and enjoy superior voice synthesis with cloning support.
+> **What's included?** Only **Piper with Amy Low voice** (~63MB) is bundled for instant offline use. Other engines (Kokoro, Kitten TTS, Pocket-TTS) are downloaded on-demand when you select them. We recommend trying **Pocket-TTS** for the best quality experience!
 
-| Engine | Model | Size | Quality | Notes |
-|--------|-------|------|---------|-------|
-| Piper | Amy Low | ~63MB | Good | Bundled for instant offline use |
-| Pocket-TTS | Full Model | ~176MB | Excellent | Downloaded on first use. **Recommended!** |
-| Kitten TTS | Nano | ~23MB | Fair | Available but not bundled by default |
-| Piper | Community Voices | Varies | Varies | 100+ downloadable voices |
+| Engine | Model | Size | Quality | Availability |
+|--------|-------|------|---------|--------------|
+| Piper | Amy Low | ~63MB | Good | ✅ Bundled (instant) |
+| Pocket-TTS | Full Model | ~176MB | Excellent | 📥 On-demand. **Recommended!** |
+| Kokoro | v1.0 | ~115MB | Excellent | 📥 On-demand |
+| Kitten TTS | Nano | ~23MB | Fair | 📥 On-demand |
+| Piper | Community Voices | Varies | Varies | 📥 100+ downloadable voices |
 
 ## 📸 Screenshots
 
@@ -65,11 +66,11 @@ The first and foremost consideration was **fully offline functionality** - no in
 > **Why is the APK size large?**
 > NekoSpeak comes pre-packaged with the Piper engine and Amy Low voice to ensure **100% offline functionality** right out of the box. The Pocket-TTS model is downloaded separately on first use.
 
-*   **Universal** (~250 MB): Works on all devices.
+*   **Universal** (~142 MB): Works on all devices.
     *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-universal-release.apk)
-*   **arm64-v8a** (~200 MB): Optimized for modern devices (Pixel, Samsung S-series).
+*   **arm64-v8a** (~92 MB): Optimized for modern devices (Pixel, Samsung S-series).
     *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-arm64-v8a-release.apk)
-*   **armeabi-v7a** (~195 MB): Optimized for older/low-end devices.
+*   **armeabi-v7a** (~86 MB): Optimized for older/low-end devices.
     *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-armeabi-v7a-release.apk)
 
 [**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.1.0)
