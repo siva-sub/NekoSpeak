@@ -15,12 +15,14 @@ graph TD
 
     subgraph "Application Layer (Kotlin)"
         Service -->|Manage| Engine[TtsEngine Interface]
+        Engine -->|Impl| Pocket[PocketTtsEngine]
         Engine -->|Impl| Kokoro[KokoroEngine]
         Engine -->|Impl| Piper[PiperEngine]
         Service -->|Observe| Prefs[PrefsManager]
     end
 
     subgraph "Inference Layer (ONNX Runtime)"
+        Pocket -->|5x Sessions| PocketModels[Pocket-TTS ONNX Models]
         Kokoro -->|Session.run| KModel[Kokoro ONNX Model]
         Piper -->|Session.run| PModel[Piper ONNX Model]
     end
@@ -28,13 +30,13 @@ graph TD
     subgraph "Native Layer (C/C++)"
         Piper -->|JNI| Espeak[EspeakWrapper]
         Espeak -->|dlopen| LibEspeak[libespeak-ng.so]
-        Kokoro -->|JNI| Phonemizer[Phonemizer]
+        Pocket -->|Kotlin| G2P[Misaki G2P]
     end
 
     subgraph "Data Layer"
         Prefs -->|Read/Write| SharedPrefs[SharedPreferences]
+        Pocket -->|Read| VoiceClones[Voice Embeddings]
         Piper -->|Read| VoiceData[Voice Data / Models]
-        Kokoro -->|Read| VoiceData
     end
 ```
 
@@ -77,143 +79,400 @@ sequenceDiagram
 | **InstallVoiceData** | `android.speech.tts.engine.INSTALL_TTS_DATA` | Triggers the voice installation UI if `CHECK_TTS_DATA` fails (rarely used as we bundle/auto-extract assets). |
 | **GetSampleText** | `android.speech.tts.engine.GET_SAMPLE_TEXT` | Returns a localized sample string (e.g., "This is an example...") for the system settings preview. |
 
-## 2. Component Analysis
+---
 
-### 2.1. NekoTtsService (`com.nekospeak.tts.NekoTtsService`)
-This is the core service extending `android.speech.tts.TextToSpeechService`. It handles the lifecycle of the TTS engine and routes synthesis requests.
+## 2. Grapheme-to-Phoneme (G2P) Pipeline
 
--   **Lifecycle Management**:
-    -   `onCreate()`: Initializes `PrefsManager` and triggers the initial engine load via `reloadEngine()`.
-    -   `onStop()`: Sets a `stopRequested` flag to interrupt audio streaming during synthesis.
-    -   `onDestroy()`: Resources cleanup and coroutine cancellation.
+G2P conversion is critical for TTS quality. NekoSpeak implements multiple strategies depending on the engine.
 
--   **Synthesis Pipeline (`onSynthesizeText`)**:
-    1.  **Request Handling**: Receives `SynthesisRequest` containing text and metadata.
-    2.  **Engine Synchronization**: Waits for the asynchronous `initJob` to complete using `runBlocking` with a timeout, ensuring the engine is ready.
-    3.  **Voice Selection**: Determines the voice based on request parameters or user preferences.
-    4.  **Audio Generation**: Calls `currentEngine.generate`.
-    5.  **Streaming**: Receives float arrays from the engine, converts them to PCM 16-bit integers, and writes them to the `SynthesisCallback` buffer.
+### 2.1. Misaki G2P (Pocket-TTS & Kokoro)
 
--   **Dynamic Engine Reloading**: Monitors `SharedPreferences` for changes in model selection (`kokoro` vs `piper`) or CPU thread counts, triggering an atomic hot-swap of the underlying `TtsEngine` instance.
+The Misaki G2P engine is a pure Kotlin implementation providing high-quality English phonemization.
 
-### 2.2. Engine Abstraction (`TtsEngine` Interface)
-To support multiple model architectures, the app uses a unified interface:
-
-```kotlin
-interface TtsEngine {
-    suspend fun initialize(): Boolean
-    suspend fun generate(text: String, speed: Float, voice: String?, callback: (FloatArray) -> Unit)
-    fun getSampleRate(): Int
-    fun getVoices(): List<String>
-    // ...
-}
+```mermaid
+flowchart LR
+    subgraph Input
+        Text["Raw Text"]
+    end
+    
+    subgraph Preprocessing
+        P1["Markdown/URL Removal"]
+        P2["Number Expansion"]
+        P3["Abbreviation Handling"]
+    end
+    
+    subgraph Tokenization
+        T1["Simple Tokenize"]
+        T2["Retokenize (Contractions)"]
+    end
+    
+    subgraph Phonemization
+        PH1{"Dictionary Lookup"}
+        PH2["eSpeak Fallback"]
+        PH3["Viterbi Decoder"]
+    end
+    
+    subgraph Output
+        O1["Phoneme String"]
+    end
+    
+    Text --> P1 --> P2 --> P3 --> T1 --> T2 --> PH1
+    PH1 -->|Found| PH3
+    PH1 -->|Not Found| PH2 --> PH3
+    PH3 --> O1
 ```
 
-### 2.3. Kokoro & Kitten Engine (`KokoroEngine.kt`)
-This class manages inference for both the **Kokoro** (82M params) and **Kitten** (35M params, lower latency) models.
+#### 2.1.1. Viterbi Decoding for Heteronym Disambiguation
 
--   **Model Selection**:
-    -   Based on `PrefsManager.currentModel`.
-    -   **Kokoro**: Uses `kokoro-v1.0.int8.onnx` and `voices-v1.0.bin`.
-    -   **Kitten**: Uses `kitten_tts_nano_v0_1.onnx` and `voices.npz`.
+English contains many **heteronyms** - words spelled identically but pronounced differently based on context (e.g., "read" as /riːd/ vs /rɛd/, "lead" as /liːd/ vs /lɛd/).
 
--   **Data Flow**:
-    1.  **Text Preprocessing**: Splits input text into sentences using regex to optimize for the model's context window.
-    2.  **Phonemization**: Uses a custom `Phonemizer` to convert text to phonemes.
-    3.  **Tokenization**: Maps phonemes to integer tokens compatible with the ONNX model.
-    4.  **Batching Strategy**:
-        -   **Kokoro**: Accumulates ~150 tokens per batch to balance context/latency.
-        -   **Kitten**: Uses a larger buffer of ~400 tokens due to its faster inference speed.
-        -   **Critical Optimization**: Generating longer batches is more efficient than frequent short inference calls due to ONNX Runtime initialization overhead.
-    5.  **Inference**:
-        -   Inputs: `input_ids` (tokens), `style` (voice embedding vector), `speed`.
-        -   Output: Audio waveform as a float tensor.
-    6.  **Trimming**: 
-        -   **Kokoro**: Heuristic silence trimming based on amplitude threshold.
-        -   **Kitten**: Fixed trimming (first 3000 and last 4000 samples) to remove model artifacts.
+The Misaki G2P uses a **Viterbi algorithm** to select the most likely pronunciation:
 
-### 2.4. Piper Engine (`PiperEngine.kt`)
-Implementation for the Piper TTS architecture.
+```mermaid
+flowchart TB
+    subgraph "Viterbi Decoder"
+        direction TB
+        S1["State: Start"]
+        S2["Word 1: 'I'"]
+        S3["Word 2: 'read'"]
+        S4["Word 3: 'the'"]
+        S5["Word 4: 'book'"]
+        
+        S1 --> S2
+        S2 --> S3
+        S3 --> S4
+        S4 --> S5
+        
+        subgraph "Candidates for 'read'"
+            C1["/riːd/ (present)"]
+            C2["/rɛd/ (past)"]
+        end
+        
+        S3 -.-> C1
+        S3 -.-> C2
+    end
+    
+    subgraph "Scoring"
+        SC1["Transition Prob: P(phoneme_i | phoneme_i-1)"]
+        SC2["Emission Prob: P(word | phoneme)"]
+        SC3["Backtrack: argmax path"]
+    end
+```
 
--   **Text-to-Phoneme (G2P)**:
-    -   Utilizes `EspeakWrapper` (JNI) to invoke `libespeak-ng` for robust, multi-language phonemization.
-    -   Includes a fallback mechanism to use `Misaki` (Kotlin G2P library) or raw eSpeak depending on configuration.
--   **Audio Synthesis**:
-    -   Converts IPA phonemes map to model-specific IDs.
-    -   Calculates `length_scale` based on requested speech speed.
-    -   Runs ONNX inference.
+**Algorithm**:
+1. For each word with multiple pronunciations (heteronym), enumerate all candidates
+2. Compute transition probabilities based on phoneme bigrams
+3. Use dynamic programming to find the globally optimal sequence
+4. Backtrack to recover the best pronunciation path
 
-### 2.5. Native Bridge (`espeak_wrapper.c`)
-Used primarily by Piper, this C file provides the JNI bindings for `libespeak-ng`.
+**Implementation**: `G2P.kt` - The `phonemize()` function handles dictionary lookups with fallback to eSpeak-NG for OOV (out-of-vocabulary) words.
 
--   **`JNI_OnLoad`**: Not explicitly defined, standard JNI naming convention used.
--   **`Java_..._textToPhonemes`**:
-    -   Calls `espeak_SetVoiceByName` to configure the language.
-    -   Calls `espeak_TextToPhonemes` with `espeakPHONEMES_IPA` (0x02) mode.
-    -   **Memory Management**: Manages a heap-allocated buffer (`MAX_PHONEME_BUFFER = 16KB`) to accumulate phonemes, preventing stack overflows on large text inputs.
+#### 2.1.2. Greedy vs. Beam Search
 
-## 3. Data Flow & Synthesis Logic
+For simpler cases, Misaki uses a **greedy approach**:
+- Single-pronunciation words are resolved immediately
+- Only heteronyms trigger the full Viterbi search
+- This provides O(n) performance for most inputs
 
-The following sequence diagram illustrates the path of a synthesis request:
+**Trade-offs**:
+| Approach | Speed | Quality | Use Case |
+|----------|-------|---------|----------|
+| Greedy | O(n) | Good | Most words |
+| Viterbi | O(n×k²) | Excellent | Heteronyms |
+| Beam Search | O(n×k×b) | Best | Not implemented (overkill for English) |
+
+### 2.2. eSpeak-NG (Piper)
+
+For Piper and as a fallback, we use the native eSpeak-NG library via JNI:
+
+```mermaid
+flowchart LR
+    subgraph "Kotlin Layer"
+        K1["PiperEngine.phonemize()"]
+        K2["EspeakWrapper.textToPhonemes()"]
+    end
+    
+    subgraph "JNI Bridge"
+        J1["espeak_wrapper.c"]
+    end
+    
+    subgraph "Native Library"
+        N1["espeak_SetVoiceByName()"]
+        N2["espeak_TextToPhonemes()"]
+        N3["IPA Output"]
+    end
+    
+    K1 --> K2 --> J1 --> N1 --> N2 --> N3
+    N3 --> J1 --> K2 --> K1
+```
+
+**Key Features**:
+- **Multi-language support**: 100+ languages via voice selection
+- **IPA output mode**: `espeakPHONEMES_IPA` (0x02)
+- **Buffer management**: 16KB heap buffer to prevent stack overflow
+
+---
+
+## 3. Pocket-TTS Engine Architecture
+
+Pocket-TTS is our flagship engine featuring **zero-shot voice cloning** using flow matching.
+
+### 3.1. Five-Model Pipeline
+
+```mermaid
+flowchart TB
+    subgraph "Input"
+        Text["Text Input"]
+        Voice["Voice Audio (WAV)"]
+    end
+    
+    subgraph "Encoding Stage"
+        ME["mimi_encoder.onnx<br/>Audio → Latents"]
+        TC["text_conditioner.onnx<br/>Tokens → Embeddings"]
+    end
+    
+    subgraph "Generation Stage"
+        FM1["flow_lm_main.onnx<br/>Backbone Transformer"]
+        FM2["flow_lm_flow.onnx<br/>Flow Matching ODE"]
+    end
+    
+    subgraph "Decoding Stage"
+        MD["mimi_decoder.onnx<br/>Latents → Audio"]
+    end
+    
+    Voice --> ME --> FM1
+    Text --> TC --> FM1
+    FM1 --> FM2 --> MD --> Audio["Audio Output"]
+```
+
+### 3.2. Flow Matching for Audio Generation
+
+Unlike diffusion models, Pocket-TTS uses **Optimal Transport Flow Matching** (OT-FM):
+
+```mermaid
+flowchart LR
+    subgraph "Noise Space"
+        N1["z₀ ~ N(0,1)"]
+    end
+    
+    subgraph "ODE Solver (20 steps)"
+        S1["t=0.0"]
+        S2["t=0.05"]
+        S3["..."]
+        S4["t=0.95"]
+        S5["t=1.0"]
+    end
+    
+    subgraph "Data Space"
+        D1["Audio Latents"]
+    end
+    
+    N1 --> S1 --> S2 --> S3 --> S4 --> S5 --> D1
+```
+
+**Why Flow Matching?**
+- **Faster than diffusion**: Requires fewer ODE steps (20 vs 50-1000)
+- **Better training**: Simpler loss function, more stable gradients
+- **Deterministic**: Same input always produces same output
+
+**Implementation**: `PocketTtsEngine.kt`
+- `flowLmMain`: Computes velocity field v(z_t, t, condition)
+- `flowLmFlow`: Single Euler step: z_{t+1} = z_t + dt × v(z_t, t)
+
+### 3.3. Voice Cloning via Mimi Encoder
+
+Zero-shot voice cloning extracts a speaker embedding from ~5-10 seconds of audio:
+
+```mermaid
+flowchart TB
+    subgraph "Audio Preprocessing"
+        A1["Load WAV (24kHz)"]
+        A2["Trim Silence"]
+        A3["Normalize [-1, 1]"]
+        A4["High-Pass Filter (80Hz)"]
+    end
+    
+    subgraph "Mimi Encoder"
+        E1["Convolutional Frontend"]
+        E2["Transformer Layers"]
+        E3["Projection Head"]
+    end
+    
+    subgraph "Output"
+        O1["Speaker Latents<br/>[frames, 32]"]
+        O2["Frame Count"]
+    end
+    
+    A1 --> A2 --> A3 --> A4 --> E1 --> E2 --> E3 --> O1 & O2
+```
+
+**Caching Strategy**:
+- First-time encoding: ~3-5 seconds
+- Cached embeddings: <100ms
+- Storage: `pocket/$voiceId.emb` (binary format)
+
+### 3.4. On-Demand Voice Loading
+
+NekoSpeak implements **lazy voice loading** to handle celebrity/cloned voices:
 
 ```mermaid
 sequenceDiagram
-    participant Sys as Android System
-    participant Service as NekoTtsService
-    participant Engine as TtsEngine
-    participant ORT as ONNX Runtime
-    participant Callback as SynthesisCallback
+    participant UI as VoicesScreen
+    participant VM as VoicesViewModel
+    participant Svc as NekoTtsService
+    participant Eng as PocketTtsEngine
+    participant Repo as PocketVoiceRepository
 
-    Sys->>Service: onSynthesizeText(text, params)
-    Service->>Service: Resolve Voice & Speed
-    Service->>Engine: generate(text, ...)
+    UI->>VM: Select "celebrity_greta"
+    VM->>Svc: TTS.speak("Hello")
+    Svc->>Eng: generate(text, voice="celebrity_greta")
     
-    loop For each Sentence/Batch
-        Engine->>Engine: Phonemize & Tokenize
-        Engine->>ORT: session.run(inputs)
-        ORT-->>Engine: Audio Tensor (Float)
-        Engine->>Engine: Trim Silence
-        Engine-->>Service: Callback(FloatArray)
-        Service->>Service: Float to PCM16
-        Service->>Callback: audioAvailable(bytes)
+    alt Voice not in voiceStates
+        Eng->>Repo: setEncodingStatus("🎤 Encoding...")
+        Eng->>Eng: encodeVoiceFromWav()
+        Eng->>Repo: setEncodingStatus(null)
     end
     
-    Service->>Callback: done()
+    Repo-->>VM: encodingStatus (StateFlow)
+    VM-->>UI: Show/Hide Banner
+    
+    Eng->>Svc: Audio chunks
+    Svc->>UI: Playback
 ```
 
-## 4. Performance & Optimizations
+---
 
-### 4.1. Coroutine Management
--   **`Dispatchers.IO`**: Used for heavyweight initialization (loading 80MB+ models, extracting assets).
--   **`Dispatchers.Default`**: Used for CPU-intensive inference tasks.
--   **SupervisorJob**: Ensures that a crash in one synthesis job does not bring down the entire service scope.
+## 4. Kokoro & Kitten Engine
 
-### 4.2. ONNX Runtime Configuration
--   **Intra-op Threads**: Configurable via `PrefsManager`. Higher thread counts improve latency on powerful cores but increase CPU contention.
--   **Optimization Level**: Set to `ALL_OPT` to enable graph fusions and constant folding.
+### 4.1. Architecture
 
-### 4.3. Asset Management
--   Models are shipped as assets (`kokoro-v1.0.int8.onnx`, `kitten_tts_nano_v0_1.onnx`).
--   **Extraction**: On first run, the app checks if the selected model exists in `filesDir` and extracts it only if missing or size mismatch (e.g., `length() < 10MB`).
--   **Voice Packs**:
-    -   Kokoro uses a proprietary binary format (`.bin`) containing multiple voice styles.
-    -   Kitten uses a standard NumPy `.npz` archive.
+Both engines share the `KokoroEngine.kt` implementation with model-specific paths:
 
-## 5. Native Integration Details
+| Parameter | Kokoro v1.0 | Kitten TTS Nano |
+|-----------|-------------|-----------------|
+| Parameters | 82M | 35M |
+| Model File | `kokoro-v1.0.int8.onnx` | `kitten_tts_nano_v0_1.onnx` |
+| Voice Pack | `voices-v1.0.bin` | `voices.npz` |
+| Token Buffer | ~150 tokens | ~400 tokens |
+| Quality | Excellent | Fair |
 
-### eSpeak-ng
-The project links against `libespeak-ng`. The JNI wrapper implementation in `espeak_wrapper.c` shows careful handling of:
--   **String Encoding**: UTF-8 conversion using `GetStringUTFChars`.
--   **Buffer Safety**: Explicit checks against buffer overflow when concatenating phonemes.
--   **Error Handling**: Returns empty strings on voice setting failure to prevent native crashes propagating to Java.
+### 4.2. Batching Strategy
 
-### Voice Packs (.npy)
-Kokoro voices are stored as NumPy arrays in a ZIP archive (`voices-v1.0.bin`).
--   **Parsing**: The app implements a custom NumPy `.npy` header parser in Kotlin (`KokoroEngine.kt:loadVoice`) to read shape and data offset, avoiding the need for a heavy Python dependency.
+To optimize inference, text is accumulated into batches:
 
-## 6. Future Extensibility
+```mermaid
+flowchart LR
+    subgraph "Sentence Splitting"
+        S1["Split by . ! ?"]
+        S2["Filter empty"]
+    end
+    
+    subgraph "Token Accumulation"
+        T1{"tokens < threshold?"}
+        T2["Add to batch"]
+        T3["Flush & infer"]
+    end
+    
+    subgraph "Inference"
+        I1["ONNX Runtime"]
+        I2["Trim silence"]
+        I3["Stream audio"]
+    end
+    
+    S1 --> S2 --> T1
+    T1 -->|Yes| T2 --> T1
+    T1 -->|No| T3 --> I1 --> I2 --> I3
+```
 
-The architecture allows easy addition of new TTS engines (e.g., VITS, FastSpeech2) by:
-1.  Implementing the `TtsEngine` interface.
-2.  Adding the model initialization logic.
-3.  Updating `NekoTtsService.reloadEngine` to instantiate the new class based on a preference key.
+---
+
+## 5. Piper Engine
+
+### 5.1. VITS-based Architecture
+
+Piper uses the VITS (Variational Inference TTS) architecture:
+
+```mermaid
+flowchart TB
+    subgraph "Text Processing"
+        P1["eSpeak-NG Phonemization"]
+        P2["Phoneme → ID mapping"]
+    end
+    
+    subgraph "VITS Model"
+        V1["Text Encoder"]
+        V2["Duration Predictor"]
+        V3["Flow-based Decoder"]
+        V4["HiFi-GAN Vocoder"]
+    end
+    
+    P1 --> P2 --> V1 --> V2 --> V3 --> V4 --> Audio
+```
+
+### 5.2. Phoneme ID Mapping
+
+Each Piper voice has a model-specific `phoneme_id_map` in its JSON config:
+
+```json
+{
+  "phoneme_id_map": {
+    "_": [0],
+    "a": [1],
+    "aɪ": [2],
+    ...
+  }
+}
+```
+
+**MisakiToPiperIPA** performs conversions for edge cases:
+- `ɛ̃` → `ɛ̃` (nasal vowels)
+- `ɾ` → `t` (Kokoro-specific, disabled for Piper)
+
+---
+
+## 6. Adaptive Streaming Engine
+
+See [README.md](README.md#-adaptive-streaming-engine) for the full streaming architecture documentation.
+
+---
+
+## 7. Performance Optimizations
+
+### 7.1. ONNX Runtime Configuration
+
+```kotlin
+val sessionOptions = OrtSession.SessionOptions().apply {
+    setOptimizationLevel(OptLevel.ALL_OPT)
+    setIntraOpNumThreads(prefs.cpuThreads)
+    setInterOpNumThreads(1) // Single-threaded inter-op
+}
+```
+
+### 7.2. Memory Management
+
+- **Model Loading**: Lazy initialization, loaded only when engine is selected
+- **Voice Embeddings**: LRU cache with disk persistence
+- **Audio Buffers**: Pooled `FloatArray` to reduce GC pressure
+
+### 7.3. INT8 Quantization
+
+Heavy models use INT8 quantization for 2-4x speedup:
+- `flow_lm_main_int8.onnx`: Main transformer backbone
+- `flow_lm_flow_int8.onnx`: Flow matching head
+- `mimi_decoder_int8.onnx`: Audio decoder
+
+---
+
+## 8. Future Extensibility
+
+The architecture allows easy addition of new TTS engines:
+
+1. Implement the `TtsEngine` interface
+2. Add model initialization logic
+3. Update `NekoTtsService.reloadEngine` to instantiate the new class
+4. Add UI selection in `SettingsScreen.kt`
+
+**Potential Future Engines**:
+- Qwen 3-TTS (when ONNX export available)
+- F5-TTS (flow matching, similar architecture)
+- Fish-Audio (multi-speaker)
