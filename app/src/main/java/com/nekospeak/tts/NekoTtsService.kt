@@ -246,20 +246,25 @@ class NekoTtsService : TextToSpeechService() {
         val speechRate = request.speechRate / 100f
         
         // Determine voice with proper fallback chain
+        // NOTE: For Pocket-TTS, celebrity/cloned voices may not be in availableVoices yet
+        // because they are loaded on-demand. We pass the saved voice to the engine and
+        // let it handle on-demand loading with its own fallback to alba.
         val requestedVoice = if (android.os.Build.VERSION.SDK_INT >= 21) request.voiceName else null
         val availableVoices = engine.getVoices()
+        val prefs = com.nekospeak.tts.data.PrefsManager(this)
+        val savedVoice = prefs.currentVoice
         
         val voiceToUse = when {
+            // Use explicitly requested voice if available
             requestedVoice != null && availableVoices.contains(requestedVoice) -> requestedVoice
-            else -> {
-                val prefs = com.nekospeak.tts.data.PrefsManager(this)
-                val savedVoice = prefs.currentVoice
-                when {
-                    availableVoices.contains(savedVoice) -> savedVoice
-                    availableVoices.isNotEmpty() -> availableVoices.first()
-                    else -> null
-                }
-            }
+            // For Pocket-TTS celebrity/cloned voices: pass savedVoice directly
+            // The engine will load on-demand or fall back to alba
+            prefs.currentModel == "pocket_v1" -> savedVoice
+            // For other models: check if saved voice is available
+            availableVoices.contains(savedVoice) -> savedVoice
+            // Default fallback
+            availableVoices.isNotEmpty() -> availableVoices.first()
+            else -> null
         }
         
         // Use engine's sample rate instead of hardcoded value
