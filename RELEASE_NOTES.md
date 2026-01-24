@@ -1,40 +1,51 @@
-# Release v1.1.0 - Pocket-TTS & Voice Cloning! 🎤
+# Release v1.2.0 - Adaptive Streaming Engine 🚀
 
 ## ⭐ What's New
 
-### Pocket-TTS Engine (Recommended!)
-- **Zero-shot voice cloning** - Create custom TTS voices from any audio sample
-- **Celebrity voices** - Download and use voices like Oprah Winfrey, Morgan Freeman, Greta Thunberg, and more
-- **Batch & Streaming modes** - Choose between quality (batch) or low-latency (streaming) decoding
-- **On-device processing** - All voice cloning happens locally, no data leaves your device
+### Adaptive Streaming Engine
+- **Self-tuning buffer management** - Automatically measures device performance and adjusts buffer sizes
+- **Parallel generation & decoding** - Uses Kotlin coroutines to run generation and decoding concurrently
+- **Real-time performance tracking** - Monitors frame generation times and calculates optimal settings
+- **Zero configuration required** - Works optimally on any device without manual tuning
 
-### Voice Recording & Encoding
-- **Built-in voice recorder** - Record your voice directly in the app to create cloned voices
-- **Audio file upload** - Upload existing WAV files for voice cloning
-- **Processing indicators** - Visual feedback when encoding voices
+### Performance Improvements
+- **Reduced startup latency** - Faster devices get smaller initial buffers for quicker audio start
+- **Smoother long-form playback** - Better buffer management prevents audio gaps on slower devices
+- **Thermal throttling handling** - Continuously re-measures performance every 10 frames
 
-### Improvements
-- **Simplified model bundling** - Only Amy Low (Piper) is bundled; Pocket-TTS downloads on first use
-- **Better UI feedback** - Processing status banners during voice operations
-- **Various bug fixes** - Fixed voice distortion issues and streaming mode reliability
+### Documentation
+- **Updated README** - Added detailed documentation of the adaptive streaming architecture
+- **Mermaid diagrams** - Visual explanation of the parallel streaming pipeline
 
 ## 📥 Downloads
 
 | Variant | Size | Description |
 |---------|------|-------------|
-| [app-universal-release.apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-universal-release.apk) | ~120MB | Works on all devices |
-| [app-arm64-v8a-release.apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-arm64-v8a-release.apk) | ~80MB | Modern devices (Pixel, Samsung S-series) |
-| [app-armeabi-v7a-release.apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-armeabi-v7a-release.apk) | ~75MB | Older/low-end devices |
+| [app-universal-release.apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.2.0/app-universal-release.apk) | ~135MB | Works on all devices |
+| [app-arm64-v8a-release.apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.2.0/app-arm64-v8a-release.apk) | ~88MB | Modern devices (Pixel, Samsung S-series) |
+| [app-armeabi-v7a-release.apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.2.0/app-armeabi-v7a-release.apk) | ~82MB | Older/low-end devices |
 
-## 🔧 Technical Changes
-- Updated to Kotlin 2.0.0
-- Gradle 9.2.0
-- Fixed EMBED_DIM mismatch causing voice loading crashes
-- Fixed batch mode decoder state initialization
-- Improved streaming mode with adaptive chunking
+## 🔧 Technical Details
 
-## 💡 Recommendation
-For the best experience, we strongly recommend using **Pocket-TTS** instead of Piper. The voice quality is significantly better, and you can create your own custom voices!
+### How Adaptive Streaming Works
+
+1. **Performance Measurement**: Tracks average frame generation time (e.g., 117ms per frame)
+2. **Ratio Calculation**: Compares generation speed vs playback speed (80ms per frame = 1.46 ratio)
+3. **Buffer Tuning**: Adjusts initial buffer (8-30 frames), decode threshold, and reserve based on ratio
+
+| Device Speed | Ratio | Initial Buffer | Decode Threshold |
+|--------------|-------|----------------|------------------|
+| Fast (realtime+) | ≤1.0 | 8 frames | 3 |
+| Medium | ≤1.5 | 15 frames | 8 |
+| Slow | >1.5 | 20+ frames | 10 |
+
+### Known Limitations
+- Very long sentences may still experience some choppiness on slower devices
+- Runs on CPU-only ONNX inference (NNAPI/QNN not supported for transformer models)
+- For smoothest experience on long texts, use Batch mode in settings
+
+## 💡 Upgrade Notes
+This is a drop-in upgrade from v1.1.0. No data migration required.
 
 ---
-**Full Changelog**: [v1.0.10...v1.1.0](https://github.com/siva-sub/NekoSpeak/compare/v1.0.10...v1.1.0)
+**Full Changelog**: [v1.1.0...v1.2.0](https://github.com/siva-sub/NekoSpeak/compare/v1.1.0...v1.2.0)

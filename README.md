@@ -29,7 +29,7 @@ The first and foremost consideration was **fully offline functionality** - no in
     *   **Pocket-TTS** ⭐ **RECOMMENDED**: Zero-shot voice cloning with celebrity voices and custom voice enrollment. Best quality and most natural sounding!
     *   **Piper**: Fast, efficient, and multilingual. Supports hundreds of community voices (English, Tamil, Spanish, etc.).
 *   **Voice Cloning**: Record your own voice or upload audio to create custom TTS voices (Pocket-TTS).
-*   **Celebrity Voices**: Download and use celebrity voice profiles (Oprah Winfrey, Greta Thunberg, Morgan Freeman, and more).
+*   **Celebrity Voices**: Download and use celebrity voice profiles (Oprah Winfrey, Greta Thunberg, and more).
 *   **Privacy First**: All processing happens 100% on-device. No data is ever sent to the cloud.
 *   **System-Wide Integration**: Works with any Android app that supports TTS (MoonReader, @Voice, etc.).
 *   **Advanced Voice Management**:
@@ -61,19 +61,19 @@ The first and foremost consideration was **fully offline functionality** - no in
 
 ## 📥 Download
 
-**v1.1.0 is now available!**
+**v1.2.0 is now available!**
 
 > **Why is the APK size large?**
 > NekoSpeak comes pre-packaged with the Piper engine and Amy Low voice to ensure **100% offline functionality** right out of the box. The Pocket-TTS model is downloaded separately on first use.
 
-*   **Universal** (135 MB): Works on all devices.
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-universal-release.apk)
-*   **arm64-v8a** (87.6 MB): Optimized for modern devices (Pixel, Samsung S-series).
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-arm64-v8a-release.apk)
-*   **armeabi-v7a** (82.2 MB): Optimized for older/low-end devices.
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-armeabi-v7a-release.apk)
+*   **Universal** (~135 MB): Works on all devices.
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.2.0/app-universal-release.apk)
+*   **arm64-v8a** (~88 MB): Optimized for modern devices (Pixel, Samsung S-series).
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.2.0/app-arm64-v8a-release.apk)
+*   **armeabi-v7a** (~82 MB): Optimized for older/low-end devices.
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.2.0/app-armeabi-v7a-release.apk)
 
-[**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.1.0)
+[**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.2.0)
 
 ## 📂 Project Structure
 
@@ -95,6 +95,97 @@ The first and foremost consideration was **fully offline functionality** - no in
 ## 🛠️ Technical Details
 
 For a detailed architectural breakdown, component analysis, system integration diagrams, and ONNX implementation details, please refer to the **[Technical Deep Dive](TECHNICAL_DEEP_DIVE.md)**.
+
+## 🚀 Adaptive Streaming Engine
+
+NekoSpeak features a **novel adaptive streaming architecture** that automatically optimizes audio generation for any device. This is particularly important for the Pocket-TTS engine, which uses large neural network models that may run slower than real-time on some devices.
+
+### The Challenge
+
+On-device neural TTS faces a fundamental problem: **generation speed varies by device**. A flagship phone might generate audio faster than real-time, while a budget device might run at 50% speed. Traditional approaches either:
+- Buffer everything first (long wait times)
+- Stream immediately (choppy audio on slower devices)
+
+### Our Solution: Self-Tuning Parallel Streaming
+
+```mermaid
+flowchart TB
+    subgraph Generator["🔄 Generator Coroutine"]
+        G1["Flow LM Main<br/>(~100ms/frame)"]
+        G2["Flow Matching<br/>(~3ms/frame)"]
+        G1 --> G2
+    end
+    
+    subgraph Tracker["📊 Performance Tracker"]
+        T1["Measure Frame Time"]
+        T2["Calculate Ratio<br/>(gen_time / 80ms)"]
+        T3["Auto-Tune Buffers"]
+        T1 --> T2 --> T3
+    end
+    
+    subgraph Decoder["🔊 Decoder Coroutine"]
+        D1["Wait for Buffer"]
+        D2["Decode Chunks"]
+        D3["Stream Audio"]
+        D1 --> D2 --> D3
+    end
+    
+    G2 -->|"Channel (50 frames)"| D1
+    G2 --> T1
+    T3 -.->|"Adaptive Thresholds"| D1
+```
+
+### How It Works
+
+1. **Parallel Coroutines**: Generator and decoder run concurrently using Kotlin coroutines with a channel buffer
+2. **Real-Time Performance Measurement**: Tracks generation time for each frame and calculates the ratio vs playback speed
+3. **Automatic Buffer Tuning**: Adjusts buffer sizes based on measured device performance
+
+```mermaid
+flowchart LR
+    subgraph Measurement["Device Performance"]
+        M1["Frame 0-10: Measure avg time"]
+        M2["Calculate: ratio = avg / 80ms"]
+    end
+    
+    subgraph Tuning["Auto-Tuning"]
+        T1{"Ratio?"}
+        T2["≤1.0: Fast Device<br/>buffer=8, threshold=3"]
+        T3["≤1.5: Medium<br/>buffer=15, threshold=8"]
+        T4[">1.5: Slow Device<br/>buffer=20, threshold=10"]
+    end
+    
+    M1 --> M2 --> T1
+    T1 -->|"Fast"| T2
+    T1 -->|"Medium"| T3
+    T1 -->|"Slow"| T4
+```
+
+### Adaptive Parameters
+
+| Device Speed | Ratio | Initial Buffer | Decode Threshold | Reserve |
+|--------------|-------|----------------|------------------|---------|
+| **Faster than real-time** | ≤1.0 | 8 frames (~640ms) | 3 | 2 |
+| **Slightly slower** | ≤1.2 | 10 frames | 5 | 2 |
+| **Moderately slower** | ≤1.5 | 15 frames (~1.2s) | 8 | 4 |
+| **Quite slow** | ≤2.0 | 20 frames (~1.6s) | 10 | 6 |
+| **Very slow** | >2.0 | 30 frames (~2.4s) | 10 | 6 |
+
+### Key Benefits
+
+- **Zero Configuration**: Works optimally on any device without user tuning
+- **Smooth Playback**: Larger buffers on slower devices prevent audio gaps
+- **Lower Latency**: Faster devices get smaller buffers for quicker startup
+- **Continuous Adaptation**: Re-measures every 10 frames to handle thermal throttling
+
+### Known Limitations
+
+> **Note**: Even with adaptive streaming, **very long sentences may still experience some choppiness** on slower devices. This is because the entire pipeline runs on **CPU-only ONNX inference** - we deliberately avoid GPU/NPU acceleration (NNAPI, QNN) as these accelerators don't support all operations in the transformer models.
+>
+> For the smoothest experience on long audiobook chapters, consider using **Batch mode** in settings, which generates all audio before playback.
+>
+> **Future**: We're exploring Qualcomm QNN and custom ONNX Runtime builds for potential GPU acceleration on compatible devices.
+
 
 ## 🏗️ Build Instructions
 

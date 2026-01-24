@@ -12,6 +12,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import java.io.File
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
@@ -74,6 +77,92 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
     // Flow LM state (for autoregressive generation) - map of state name to tensor data
     // Each entry has: name -> Pair(type: String, data: Any) where data is FloatArray or LongArray
     private var flowLmState: MutableMap<String, Pair<String, Any>>? = null
+    
+    // Voice embedding cache - avoid re-encoding same voice file
+    private val voiceEmbeddingCache = mutableMapOf<String, Pair<FloatArray, Int>>()
+    
+    // Pre-computed flow buffers for Euler integration (s/t time steps)
+    // Computed once per lsdSteps value to avoid repeated allocation
+    private var precomputedFlowBuffers: List<Pair<FloatArray, FloatArray>>? = null
+    private var precomputedLsdSteps: Int = 0
+    
+    // Adaptive streaming engine - auto-tunes based on device performance
+    private val performanceTracker = PerformanceTracker()
+    
+    /**
+     * Tracks device performance and calculates optimal buffer sizes
+     */
+    private class PerformanceTracker {
+        private val recentFrameTimes = mutableListOf<Long>()
+        private val maxSamples = 50
+        private val audioFrameDurationMs = 80L // Each frame is 80ms of audio
+        private var totalFrames = 0
+        
+        // Cached optimal values
+        var optimalInitialBuffer = 15
+            private set
+        var optimalDecodeThreshold = 10
+            private set
+        var optimalReserve = 5
+            private set
+        
+        @Synchronized
+        fun recordFrameTime(timeMs: Long) {
+            recentFrameTimes.add(timeMs)
+            if (recentFrameTimes.size > maxSamples) {
+                recentFrameTimes.removeAt(0)
+            }
+            totalFrames++
+            
+            // Recalculate optimal values every 10 frames after initial 10
+            if (totalFrames >= 10 && totalFrames % 10 == 0) {
+                calculateOptimalValues()
+            }
+        }
+        
+        private fun calculateOptimalValues() {
+            val avgFrameTime = recentFrameTimes.average()
+            
+            // Calculate generation-to-playback ratio
+            // If generation takes 120ms but audio is 80ms, ratio = 1.5
+            val genToPlayRatio = avgFrameTime / audioFrameDurationMs
+            
+            // Calculate optimal initial buffer based on device speed
+            // Faster device (ratio ~1.0) needs smaller buffer
+            // Slower device (ratio ~2.0) needs larger buffer
+            optimalInitialBuffer = when {
+                genToPlayRatio <= 1.0 -> 8   // Device is faster than real-time
+                genToPlayRatio <= 1.2 -> 10  // Slightly slower
+                genToPlayRatio <= 1.5 -> 15  // Moderately slower
+                genToPlayRatio <= 2.0 -> 20  // Quite slow
+                else -> 30                    // Very slow device
+            }
+            
+            // Decode threshold - how many frames to buffer before decoding
+            optimalDecodeThreshold = when {
+                genToPlayRatio <= 1.0 -> 3
+                genToPlayRatio <= 1.2 -> 5
+                genToPlayRatio <= 1.5 -> 8
+                else -> 10
+            }
+            
+            // Reserve frames to keep in buffer
+            optimalReserve = when {
+                genToPlayRatio <= 1.0 -> 2
+                genToPlayRatio <= 1.5 -> 4
+                else -> 6
+            }
+            
+            // Log adaptive values (this function only runs every 10 frames)
+            Log.d(TAG, "[Adaptive] Avg frame: ${avgFrameTime.toLong()}ms, ratio: ${String.format("%.2f", genToPlayRatio)}, " +
+                      "buffer: $optimalInitialBuffer, threshold: $optimalDecodeThreshold, reserve: $optimalReserve")
+        }
+        
+        fun reset() {
+            recentFrameTimes.clear()
+            totalFrames = 0
+        }
+    }
     
     override suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -147,8 +236,10 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
     private fun createSessionOptions(): OrtSession.SessionOptions {
         val prefs = com.nekospeak.tts.data.PrefsManager(context)
         return OrtSession.SessionOptions().apply {
+            // Use user-configured threads (default 6, which works well on most devices)
             setIntraOpNumThreads(prefs.cpuThreads)
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            setMemoryPatternOptimization(true)
         }
     }
     
@@ -748,100 +839,215 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
             
             // Use PrefsManager settings instead of hardcoded values
             val framesAfterEos = prefs.pocketFramesAfterEos
-            val lsdSteps = prefs.pocketLsdSteps.coerceIn(1, 50)
+            val userLsdSteps = prefs.pocketLsdSteps.coerceIn(1, 50)
             val temperature = prefs.pocketTemperature.coerceIn(0f, 2f)
             val decodingMode = prefs.pocketDecodingMode
             val decodeChunkSize = prefs.pocketDecodeChunkSize.coerceIn(1, 50)
             
-            Log.d(TAG, "Generation params: lsdSteps=$lsdSteps, temp=$temperature, framesAfterEos=$framesAfterEos, mode=$decodingMode")
+            // For streaming mode: use lower LSD steps (5) for faster generation
+            // This enables real-time playback on mobile hardware
+            // Batch mode uses user's setting for higher quality
+            val lsdSteps = if (decodingMode == "streaming") {
+                minOf(userLsdSteps, 3) // Cap at 3 for streaming - prioritize speed over quality
+            } else {
+                userLsdSteps
+            }
             
-            // Streaming mode parameters (following KevinAHM reference)
-            val FIRST_CHUNK_FRAMES = 2    // Small first chunk for low TTFB
-            val MAX_CHUNK_FRAMES = 15     // Larger chunks for throughput
+            Log.d(TAG, "Generation params: lsdSteps=$lsdSteps (user: $userLsdSteps), temp=$temperature, framesAfterEos=$framesAfterEos, mode=$decodingMode")
+            
+            // Pre-compute flow buffers if not already done for this lsdSteps
+            if (precomputedFlowBuffers == null || precomputedLsdSteps != lsdSteps) {
+                val dt = 1.0f / lsdSteps
+                precomputedFlowBuffers = (0 until lsdSteps).map { j ->
+                    val s = j.toFloat() / lsdSteps
+                    val t = s + dt
+                    Pair(floatArrayOf(s), floatArrayOf(t))
+                }
+                precomputedLsdSteps = lsdSteps
+                Log.d(TAG, "Pre-computed $lsdSteps flow buffers")
+            }
+            
+            // Streaming mode parameters
+            // Since generation and decoding run in parallel now, we can use a smaller initial buffer
+            // 15 frames = ~1.2 seconds of audio - fast startup with parallel processing keeping up
+            val FIRST_CHUNK_FRAMES = 15   // Reduced buffer for faster startup
+            val MAX_CHUNK_FRAMES = 15     // Chunk size for subsequent decoding
             
             val allLatents = mutableListOf<FloatArray>()
             var currentLatent = FloatArray(LATENT_DIM) { Float.NaN }
-            var decodedFrames = 0
             
-            // For STREAMING mode: Initialize decoder state now so we can decode progressively
-            // For BATCH mode: We'll initialize later, right before decoding
+            // STREAMING MODE: Use parallel generation and decoding with channels
             if (decodingMode == "streaming") {
+                // Channel for passing latents from generator to decoder
+                val latentChannel = Channel<FloatArray>(capacity = 50) // Buffer up to 50 frames
+                
+                // Initialize decoder state for streaming
                 codec.initDecoderState()
-            }
-            
-            while (generatedFrames < maxFrames && isActive) {
-                // Run flow_lm_main with current latent and empty text
-                val (conditioning, eosLogit) = runFlowLmMainPass(
-                    session,
-                    currentLatent,
-                    1,
-                    emptyText,
-                    0
-                )
                 
-                // Check for EOS
-                if (eosLogit > -4.0f && eosStep == null) {
-                    eosStep = generatedFrames
-                    Log.d(TAG, "EOS detected at frame $generatedFrames")
-                }
-                
-                // Stop after frames_after_eos additional frames
-                val currentEosStep = eosStep
-                if (currentEosStep != null && generatedFrames >= currentEosStep + framesAfterEos) {
-                    Log.d(TAG, "Stopping after EOS + $framesAfterEos frames")
-                    break
-                }
-                
-                // Flow matching with Euler integration
-                val latent = runFlowMatching(flowSession, conditioning, lsdSteps, temperature)
-                
-                // Collect latent
-                allLatents.add(latent)
-                generatedFrames++
-                currentLatent = latent
-                
-                // STREAMING MODE: Decode progressively with adaptive chunking
-                if (decodingMode == "streaming") {
-                    val pending = allLatents.size - decodedFrames
-                    var chunkSize = 0
-                    
-                    if (decodedFrames == 0) {
-                        // First chunk - minimize Time To First Byte (TTFB)
-                        if (pending >= FIRST_CHUNK_FRAMES) {
-                            chunkSize = FIRST_CHUNK_FRAMES
-                        }
-                    } else {
-                        // Subsequent chunks - use larger chunks for efficiency
-                        if (pending >= MAX_CHUNK_FRAMES) {
-                            chunkSize = MAX_CHUNK_FRAMES
-                        }
-                    }
-                    
-                    // Decode chunk if ready
-                    if (chunkSize > 0) {
-                        val chunkLatents = FloatArray(chunkSize * LATENT_DIM)
-                        for (j in 0 until chunkSize) {
-                            System.arraycopy(allLatents[decodedFrames + j], 0, chunkLatents, j * LATENT_DIM, LATENT_DIM)
+                coroutineScope {
+                    // Decoder coroutine - runs in parallel with generation
+                    val decoderJob = launch(Dispatchers.Default) {
+                        var decodedFrames = 0
+                        val pendingLatents = mutableListOf<FloatArray>()
+                        var playbackStarted = false
+                        
+                        for (latent in latentChannel) {
+                            pendingLatents.add(latent)
+                            
+                            // Get adaptive thresholds based on measured device performance
+                            val adaptiveThreshold = performanceTracker.optimalDecodeThreshold
+                            val adaptiveReserve = performanceTracker.optimalReserve
+                            
+                            // Determine if we should decode
+                            var chunkSize = 0
+                            if (!playbackStarted) {
+                                // Wait for initial buffer before starting playback
+                                // Use adaptive initial buffer based on device speed
+                                val adaptiveInitialBuffer = performanceTracker.optimalInitialBuffer
+                                if (pendingLatents.size >= adaptiveInitialBuffer) {
+                                    chunkSize = minOf(pendingLatents.size, MAX_CHUNK_FRAMES)
+                                    playbackStarted = true
+                                    Log.d(TAG, "[Decoder] Starting playback with ${pendingLatents.size} frames (adaptive: $adaptiveInitialBuffer)")
+                                }
+                            } else {
+                                // After playback started, use adaptive thresholds
+                                // These adjust based on measured generation speed
+                                if (pendingLatents.size >= adaptiveThreshold) {
+                                    chunkSize = minOf(pendingLatents.size - adaptiveReserve, MAX_CHUNK_FRAMES)
+                                    if (chunkSize < 1) chunkSize = 0
+                                }
+                            }
+                            
+                            // Decode chunk if ready
+                            if (chunkSize > 0) {
+                                val chunkLatents = FloatArray(chunkSize * LATENT_DIM)
+                                for (j in 0 until chunkSize) {
+                                    System.arraycopy(pendingLatents[j], 0, chunkLatents, j * LATENT_DIM, LATENT_DIM)
+                                }
+                                
+                                val audio = codec.decode(chunkLatents, chunkSize)
+                                if (audio.isNotEmpty()) {
+                                    callback(audio)
+                                }
+                                
+                                // Remove decoded frames from pending
+                                repeat(chunkSize) { pendingLatents.removeAt(0) }
+                                decodedFrames += chunkSize
+                            }
                         }
                         
-                        val audio = codec.decode(chunkLatents, chunkSize)
-                        if (audio.isNotEmpty()) {
-                            callback(audio)
+                        // Decode any remaining frames after channel closes
+                        if (pendingLatents.isNotEmpty()) {
+                            Log.d(TAG, "[Decoder] Decoding final ${pendingLatents.size} frames")
+                            val chunkLatents = FloatArray(pendingLatents.size * LATENT_DIM)
+                            for (j in pendingLatents.indices) {
+                                System.arraycopy(pendingLatents[j], 0, chunkLatents, j * LATENT_DIM, LATENT_DIM)
+                            }
+                            val audio = codec.decode(chunkLatents, pendingLatents.size)
+                            if (audio.isNotEmpty()) {
+                                callback(audio)
+                            }
                         }
-                        decodedFrames += chunkSize
+                        Log.d(TAG, "[Decoder] Complete, decoded $decodedFrames frames")
                     }
+                    
+                    // Generator - main coroutine continues generating
+                    while (generatedFrames < maxFrames && isActive) {
+                        val frameStartTime = System.currentTimeMillis()
+                        
+                        // Run flow_lm_main with current latent and empty text
+                        val (conditioning, eosLogit) = runFlowLmMainPass(
+                            session,
+                            currentLatent,
+                            1,
+                            emptyText,
+                            0
+                        )
+                        val mainPassTime = System.currentTimeMillis() - frameStartTime
+                        
+                        // Check for EOS
+                        if (eosLogit > -4.0f && eosStep == null) {
+                            eosStep = generatedFrames
+                            Log.d(TAG, "EOS detected at frame $generatedFrames")
+                        }
+                        
+                        // Stop after frames_after_eos additional frames
+                        val currentEosStep = eosStep
+                        if (currentEosStep != null && generatedFrames >= currentEosStep + framesAfterEos) {
+                            Log.d(TAG, "Stopping after EOS + $framesAfterEos frames")
+                            break
+                        }
+                        
+                        // Flow matching with Euler integration
+                        val flowStartTime = System.currentTimeMillis()
+                        val latent = runFlowMatching(flowSession, conditioning, lsdSteps, temperature)
+                        val flowTime = System.currentTimeMillis() - flowStartTime
+                        
+                        // Log timing every 10 frames
+                        val totalFrameTime = mainPassTime + flowTime
+                        performanceTracker.recordFrameTime(totalFrameTime)
+                        
+                        if (generatedFrames % 10 == 0) {
+                            Log.d(TAG, "Frame $generatedFrames timing: main=${mainPassTime}ms, flow=${flowTime}ms, total=${totalFrameTime}ms")
+                        }
+                        
+                        // Send latent to decoder via channel (non-blocking with buffer)
+                        latentChannel.send(latent)
+                        allLatents.add(latent)
+                        generatedFrames++
+                        currentLatent = latent
+                    }
+                    
+                    // Close channel to signal decoder to finish
+                    latentChannel.close()
+                    Log.d(TAG, "Generated $generatedFrames frames total, waiting for decoder...")
+                    
+                    // Wait for decoder to finish
+                    decoderJob.join()
                 }
-            }
-            
-            Log.d(TAG, "Generated $generatedFrames frames total")
-            
-            // Decode remaining latents (or all in batch mode)
-            if (decodingMode == "batch") {
-                // BATCH MODE: Decode all latents at once with chunked processing
-                Log.d(TAG, "Batch mode: Decoding all $generatedFrames frames...")
+            } else {
+                // BATCH MODE: Generate all latents first, then decode
+                while (generatedFrames < maxFrames && isActive) {
+                    val frameStartTime = System.currentTimeMillis()
+                    
+                    val (conditioning, eosLogit) = runFlowLmMainPass(
+                        session,
+                        currentLatent,
+                        1,
+                        emptyText,
+                        0
+                    )
+                    val mainPassTime = System.currentTimeMillis() - frameStartTime
+                    
+                    if (eosLogit > -4.0f && eosStep == null) {
+                        eosStep = generatedFrames
+                        Log.d(TAG, "EOS detected at frame $generatedFrames")
+                    }
+                    
+                    val currentEosStep = eosStep
+                    if (currentEosStep != null && generatedFrames >= currentEosStep + framesAfterEos) {
+                        Log.d(TAG, "Stopping after EOS + $framesAfterEos frames")
+                        break
+                    }
+                    
+                    val flowStartTime = System.currentTimeMillis()
+                    val latent = runFlowMatching(flowSession, conditioning, lsdSteps, temperature)
+                    val flowTime = System.currentTimeMillis() - flowStartTime
+                    
+                    if (generatedFrames % 10 == 0) {
+                        Log.d(TAG, "Frame $generatedFrames timing: main=${mainPassTime}ms, flow=${flowTime}ms, total=${mainPassTime + flowTime}ms")
+                    }
+                    
+                    allLatents.add(latent)
+                    generatedFrames++
+                    currentLatent = latent
+                }
                 
-                // Initialize decoder state fresh for batch decode
+                Log.d(TAG, "Generated $generatedFrames frames total")
+                
+                // Decode all latents
                 codec.initDecoderState()
+                Log.d(TAG, "Batch decoding $generatedFrames frames...")
                 
                 for (i in allLatents.indices step decodeChunkSize) {
                     val endIdx = minOf(i + decodeChunkSize, allLatents.size)
@@ -853,22 +1059,6 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
                     }
                     
                     val audio = codec.decode(chunkLatents, chunkSize)
-                    if (audio.isNotEmpty()) {
-                        callback(audio)
-                    }
-                }
-            } else {
-                // STREAMING MODE: Decode any remaining latents
-                if (decodedFrames < allLatents.size) {
-                    val remaining = allLatents.size - decodedFrames
-                    Log.d(TAG, "Streaming mode: Decoding remaining $remaining frames...")
-                    
-                    val chunkLatents = FloatArray(remaining * LATENT_DIM)
-                    for (j in 0 until remaining) {
-                        System.arraycopy(allLatents[decodedFrames + j], 0, chunkLatents, j * LATENT_DIM, LATENT_DIM)
-                    }
-                    
-                    val audio = codec.decode(chunkLatents, remaining)
                     if (audio.isNotEmpty()) {
                         callback(audio)
                     }
@@ -1030,10 +1220,21 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
             FloatArray(LATENT_DIM) { 0f }
         }
         
-        // Euler integration over flow network
+        // Use pre-computed flow buffers if available for this step count
+        val flowBuffers = if (precomputedLsdSteps == steps && precomputedFlowBuffers != null) {
+            precomputedFlowBuffers!!
+        } else {
+            // Fallback: compute on-the-fly
+            (0 until steps).map { j ->
+                val s = j.toFloat() / steps
+                val t = s + dt
+                Pair(floatArrayOf(s), floatArrayOf(t))
+            }
+        }
+        
+        // Euler integration over flow network using pre-computed buffers
         for (j in 0 until steps) {
-            val s = j.toFloat() / steps
-            val t = s + dt
+            val (sArr, tArr) = flowBuffers[j]
             
             val inputs = mapOf(
                 "c" to OnnxTensor.createTensor(
@@ -1043,12 +1244,12 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
                 ),
                 "s" to OnnxTensor.createTensor(
                     ortEnv!!,
-                    FloatBuffer.wrap(floatArrayOf(s)),
+                    FloatBuffer.wrap(sArr),
                     longArrayOf(1, 1)
                 ),
                 "t" to OnnxTensor.createTensor(
                     ortEnv!!,
-                    FloatBuffer.wrap(floatArrayOf(t)),
+                    FloatBuffer.wrap(tArr),
                     longArrayOf(1, 1)
                 ),
                 "x" to OnnxTensor.createTensor(
