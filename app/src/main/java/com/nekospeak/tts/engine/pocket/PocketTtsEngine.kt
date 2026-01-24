@@ -4,10 +4,7 @@ import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
-import android.widget.Toast
 import com.nekospeak.tts.engine.TtsEngine
 import com.nekospeak.tts.data.PrefsManager
 import kotlinx.coroutines.CoroutineScope
@@ -76,15 +73,6 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
     
     // Preferences for generation parameters
     private val prefs: PrefsManager by lazy { PrefsManager(context) }
-    
-    // Handler for showing Toast messages from background threads
-    private val mainHandler = Handler(Looper.getMainLooper())
-    
-    private fun showToast(message: String, duration: Int = Toast.LENGTH_SHORT) {
-        mainHandler.post {
-            Toast.makeText(context, message, duration).show()
-        }
-    }
     
     // Flow LM state (for autoregressive generation) - map of state name to tensor data
     // Each entry has: name -> Pair(type: String, data: Any) where data is FloatArray or LongArray
@@ -886,7 +874,8 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
             
             if (celebrityWav.exists()) {
                 Log.i(TAG, "Found celebrity WAV, encoding on-demand: $voiceName")
-                showToast("🎤 Encoding voice: ${voiceName.replace("_", " ")}...", Toast.LENGTH_LONG)
+                // Notify UI via Repository
+                com.nekospeak.tts.data.PocketVoiceRepository.setEncodingStatus("🎤 Encoding voice: ${voiceName.replace("_", " ")}...")
                 
                 val encoder = mimiEncoder
                 if (encoder != null) {
@@ -915,24 +904,35 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
                         )
                         voiceStates[voiceName] = voiceState
                         Log.i(TAG, "On-demand encoded celebrity voice: $voiceName (${embeddings.second} frames)")
-                        val loadedMsg = if (isFromCache) "⚡ Voice loaded: ${voiceName.replace("_", " ")}" else "✅ Voice ready: ${voiceName.replace("_", " ")}"
-                        showToast(loadedMsg)
+                        // Clear status on success
+                        com.nekospeak.tts.data.PocketVoiceRepository.setEncodingStatus(null)
                     } else {
-                        showToast("❌ Failed to encode voice", Toast.LENGTH_LONG)
+                        com.nekospeak.tts.data.PocketVoiceRepository.setEncodingStatus("❌ Failed to encode voice")
+                        // Clear error after delay or let next action clear it? 
+                        // For now let it stick briefly or rely on UI to handle.
+                        // Better to clear it 
+                        kotlinx.coroutines.GlobalScope.launch { 
+                            kotlinx.coroutines.delay(3000)
+                            com.nekospeak.tts.data.PocketVoiceRepository.setEncodingStatus(null) 
+                        }
                     }
                 }
             } else if (clonedFile.exists()) {
                 Log.i(TAG, "Found cloned voice file, loading: $voiceName")
-                showToast("📂 Loading voice: ${voiceName.replace("_", " ")}...")
+                com.nekospeak.tts.data.PocketVoiceRepository.setEncodingStatus("📂 Loading voice: ${voiceName.replace("_", " ")}...")
                 try {
                     val state = PocketVoiceState.fromBytes(clonedFile.readBytes())
                     voiceStates[state.id] = state
                     voiceState = state
                     Log.i(TAG, "On-demand loaded cloned voice: $voiceName")
-                    showToast("✅ Voice loaded: ${state.displayName}")
+                    com.nekospeak.tts.data.PocketVoiceRepository.setEncodingStatus(null)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to load cloned voice: $voiceName", e)
-                    showToast("❌ Failed to load voice", Toast.LENGTH_LONG)
+                    com.nekospeak.tts.data.PocketVoiceRepository.setEncodingStatus("❌ Failed to load voice")
+                    kotlinx.coroutines.GlobalScope.launch { 
+                        kotlinx.coroutines.delay(3000)
+                        com.nekospeak.tts.data.PocketVoiceRepository.setEncodingStatus(null) 
+                    }
                 }
             }
         }

@@ -159,6 +159,18 @@ object PocketVoiceRepository {
     // Download state tracking
     private val _downloadStates = mutableMapOf<String, MutableStateFlow<Float>>()
     
+    // Encoding/Processing state tracking (Bridge between Service and UI)
+    private val _encodingStatus = MutableStateFlow<String?>(null)
+    val encodingStatus: StateFlow<String?> = _encodingStatus.asStateFlow()
+    
+    /**
+     * Update the current encoding status.
+     * @param status Status message or null to clear.
+     */
+    fun setEncodingStatus(status: String?) {
+        _encodingStatus.value = status
+    }
+    
     fun getDownloadProgress(voiceId: String): StateFlow<Float>? {
         return _downloadStates[voiceId]?.asStateFlow()
     }

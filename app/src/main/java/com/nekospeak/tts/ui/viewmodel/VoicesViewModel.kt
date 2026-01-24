@@ -122,6 +122,7 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
         loadVoices()
         startPollLoop()
         observePrefsChanges()
+        observeEncodingStatus()
     }
     
     private fun observePrefsChanges() {
@@ -134,6 +135,15 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
                     // Model changed externally (e.g., from Settings), reload voices
                     loadVoices()
                 }
+            }
+        }
+    }
+    
+    // Collecting status from PocketVoiceRepository (singleton)
+    private fun observeEncodingStatus() {
+        viewModelScope.launch {
+            com.nekospeak.tts.data.PocketVoiceRepository.encodingStatus.collect { status ->
+                _uiState.update { it.copy(processingStatus = status) }
             }
         }
     }
