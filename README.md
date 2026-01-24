@@ -110,27 +110,27 @@ On-device neural TTS faces a fundamental problem: **generation speed varies by d
 
 ```mermaid
 flowchart TB
-    subgraph Generator["🔄 Generator Coroutine"]
-        G1["Flow LM Main<br/>(~100ms/frame)"]
-        G2["Flow Matching<br/>(~3ms/frame)"]
+    subgraph Generator["Generator Coroutine"]
+        G1["Flow LM Main\n~100ms/frame"]
+        G2["Flow Matching\n~3ms/frame"]
         G1 --> G2
     end
     
-    subgraph Tracker["📊 Performance Tracker"]
+    subgraph Tracker["Performance Tracker"]
         T1["Measure Frame Time"]
-        T2["Calculate Ratio<br/>(gen_time / 80ms)"]
+        T2["Calculate Ratio"]
         T3["Auto-Tune Buffers"]
         T1 --> T2 --> T3
     end
     
-    subgraph Decoder["🔊 Decoder Coroutine"]
+    subgraph Decoder["Decoder Coroutine"]
         D1["Wait for Buffer"]
         D2["Decode Chunks"]
         D3["Stream Audio"]
         D1 --> D2 --> D3
     end
     
-    G2 -->|"Channel (50 frames)"| D1
+    G2 -->|"Channel"| D1
     G2 --> T1
     T3 -.->|"Adaptive Thresholds"| D1
 ```
