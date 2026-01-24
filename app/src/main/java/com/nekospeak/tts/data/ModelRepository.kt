@@ -73,7 +73,8 @@ object ModelRepository {
             name = "Kitten TTS Nano",
             description = "Lightning fast, low latency model.",
             files = listOf(
-                ModelFile("kitten_tts_nano_v0_1.onnx", "https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.0/kitten_tts_nano_v0_1.onnx", "Model Weights")
+                ModelFile("kitten_tts_nano_v0_1.onnx", "https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.0/kitten_tts_nano_v0_1.onnx", "Model Weights"),
+                ModelFile("voices.npz", "https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.0/voices.npz", "Voice Pack")
             )
         )
     )

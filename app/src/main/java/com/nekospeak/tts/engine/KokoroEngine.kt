@@ -26,15 +26,15 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         const val MAX_TOKENS = 150 // Increased to 150 for better context and fewer gaps
         const val STYLE_DIM = 256
         
-        // Kokoro Assets
-        private const val MODEL_KOKORO_ASSET = "kokoro/kokoro-v1.0.int8.onnx"
-        private const val MODEL_KOKORO_FILE = "kokoro_model.onnx"
-        private const val VOICES_KOKORO_ASSET = "kokoro/voices-v1.0.bin"
+        // Kokoro files - downloaded by ModelRepository to filesDir root
+        private const val MODEL_KOKORO_ASSET = "kokoro/kokoro-v1.0.int8.onnx"  // For assets fallback (not bundled)
+        private const val MODEL_KOKORO_FILE = "kokoro-v1.0.int8.onnx"  // Match ModelRepository download path
+        private const val VOICES_KOKORO_ASSET = "voices-v1.0.bin"  // Match ModelRepository download path
         
-        // Kitten Assets
-        private const val MODEL_KITTEN_ASSET = "kitten/kitten_tts_nano_v0_1.onnx"
-        private const val MODEL_KITTEN_FILE = "kitten_model.onnx"
-        private const val VOICES_KITTEN_ASSET = "kitten/voices.npz"
+        // Kitten Assets - downloaded by ModelRepository to filesDir root
+        private const val MODEL_KITTEN_ASSET = "kitten/kitten_tts_nano_v0_1.onnx"  // For assets fallback (not bundled)
+        private const val MODEL_KITTEN_FILE = "kitten_tts_nano_v0_1.onnx"  // Match ModelRepository
+        private const val VOICES_KITTEN_ASSET = "voices.npz"  // Match ModelRepository download path
     }
     
     private var ortEnv: OrtEnvironment? = null
