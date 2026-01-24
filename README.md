@@ -111,8 +111,8 @@ On-device neural TTS faces a fundamental problem: **generation speed varies by d
 ```mermaid
 flowchart TB
     subgraph Generator["Generator Coroutine"]
-        G1["Flow LM Main\n~100ms/frame"]
-        G2["Flow Matching\n~3ms/frame"]
+        G1["Flow LM Main ~100ms"]
+        G2["Flow Matching ~3ms"]
         G1 --> G2
     end
     
@@ -132,7 +132,7 @@ flowchart TB
     
     G2 -->|"Channel"| D1
     G2 --> T1
-    T3 -.->|"Adaptive Thresholds"| D1
+    T3 -.->|"Adaptive"| D1
 ```
 
 ### How It Works
