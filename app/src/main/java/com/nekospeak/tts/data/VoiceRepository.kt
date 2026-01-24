@@ -157,6 +157,42 @@ class VoiceRepository(private val context: Context) {
              return null
         }
     }
+    
+    /**
+     * Delete a downloaded Piper voice. Returns true if deleted successfully.
+     * Does not delete bundled voices.
+     */
+    fun deleteVoice(voiceId: String): Boolean {
+        val voice = availableVoices.find { it.id == voiceId } ?: return false
+        
+        // Don't allow deleting bundled voices
+        if (voice.isBundled) return false
+        
+        var deleted = false
+        
+        // Delete from external piper_downloads
+        val externalDir = context.getExternalFilesDir("piper_downloads")
+        val onnx = File(externalDir, "${voice.id}.onnx")
+        val json = File(externalDir, "${voice.id}.onnx.json")
+        if (onnx.exists()) { onnx.delete(); deleted = true }
+        if (json.exists()) { json.delete() }
+        
+        // Also check/delete from internal piper folder (legacy)
+        val piperDir = File(context.filesDir, "piper")
+        val internalOnnx = File(piperDir, "${voice.id}.onnx")
+        val internalJson = File(piperDir, "${voice.id}.onnx.json")
+        if (internalOnnx.exists()) { internalOnnx.delete(); deleted = true }
+        if (internalJson.exists()) { internalJson.delete() }
+        
+        return deleted
+    }
+    
+    /**
+     * Get list of downloaded (non-bundled) Piper voices
+     */
+    fun getDownloadedVoices(): List<VoiceInfo> {
+        return availableVoices.filter { !it.isBundled && getDownloadState(it.id) == DownloadState.Downloaded }
+    }
 }
 
 enum class DownloadState {

@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.nekospeak.tts.data.ModelInfo
 import com.nekospeak.tts.data.ModelRepository
+import com.nekospeak.tts.data.VoiceRepository
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -30,6 +31,12 @@ fun ModelManagerScreen(navController: NavController) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var refreshTrigger by remember { mutableIntStateOf(0) } // To force recomposition on state changes
+    
+    // Get downloaded Piper voices dynamically (must be in composable scope, not LazyColumn)
+    val voiceRepository = remember { VoiceRepository(context) }
+    val downloadedVoices = remember(refreshTrigger) { 
+        voiceRepository.getDownloadedVoices() 
+    }
     
     Scaffold(
         topBar = {
@@ -64,19 +71,44 @@ fun ModelManagerScreen(navController: NavController) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             }
             
-            // Piper Section (managed separately for now)
+            // Piper Section with downloaded voices
             item {
                 Text(
-                    "Offline Voices (Piper)",
+                    "Downloaded Piper Voices",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
+            
+            if (downloadedVoices.isEmpty()) {
+                item {
+                    Text(
+                        "No downloaded Piper voices. Download voices from the Voices tab.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                items(downloadedVoices, key = { it.id }) { voice ->
+                    PiperVoiceCard(
+                        voiceName = voice.name,
+                        voiceId = voice.id,
+                        language = voice.languageName,
+                        sizeBytes = voice.sizeBytes,
+                        onDelete = {
+                            voiceRepository.deleteVoice(voice.id)
+                            refreshTrigger++
+                        }
+                    )
+                }
+            }
+            
             item {
-                 Text(
-                    "Standard Piper voices are managed automatically or bundled.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                Text(
+                    "Bundled: en_US-amy-low (included with app)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
         }
@@ -223,5 +255,52 @@ fun ModelCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun PiperVoiceCard(
+    voiceName: String,
+    voiceId: String,
+    language: String,
+    sizeBytes: Long,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(voiceName, fontWeight = FontWeight.Bold)
+                Text(voiceId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "$language • ${formatFileSize(sizeBytes)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            IconButton(
+                onClick = onDelete,
+                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) {
+                Icon(Icons.Default.Delete, "Delete")
+            }
+        }
+    }
+}
+
+private fun formatFileSize(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        else -> "${bytes / (1024 * 1024)} MB"
     }
 }
