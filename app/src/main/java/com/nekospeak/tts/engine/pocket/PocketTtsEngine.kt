@@ -1017,7 +1017,7 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
                     }
                     
                     // Generator - main coroutine continues generating
-                    while (generatedFrames < maxFrames && isActive) {
+                    while (generatedFrames < maxFrames && isActive && !stopRequested) {
                         val frameStartTime = System.currentTimeMillis()
                         
                         // Run flow_lm_main with current latent and empty text
@@ -1072,7 +1072,7 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
                 }
             } else {
                 // BATCH MODE: Generate all latents first, then decode
-                while (generatedFrames < maxFrames && isActive) {
+                while (generatedFrames < maxFrames && isActive && !stopRequested) {
                     val frameStartTime = System.currentTimeMillis()
                     
                     val (conditioning, eosLogit) = runFlowLmMainPass(
