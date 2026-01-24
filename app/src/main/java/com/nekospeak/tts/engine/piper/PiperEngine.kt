@@ -186,24 +186,46 @@ class PiperEngine(
         // Debug Log
         Log.d(TAG, "Raw Phonemes: $rawPhonemes")
         
-        // 2. Tokenize (Map to IDs + Padding)
+        // 2. Tokenize using greedy longest-match (NOT char-by-char)
+        // This properly handles multi-character phonemes like "eɪ", "dʒ", "tʃ"
         val idMap = conf.phonemeIdMap
         val tokenIds = mutableListOf<Long>()
+        
+        // Compute max key length for efficiency
+        val maxKeyLen = idMap.keys.maxOfOrNull { it.length } ?: 1
+        val keySet = idMap.keys
         
         // BOS
         idMap[BOS]?.forEach { tokenIds.add(it.toLong()) }
         idMap[PAD]?.forEach { tokenIds.add(it.toLong()) }
         
-        for (char in rawPhonemes) {
-            val charStr = char.toString()
-            if (idMap.containsKey(charStr)) {
-                idMap[charStr]?.forEach { tokenIds.add(it.toLong()) }
-                idMap[PAD]?.forEach { tokenIds.add(it.toLong()) }
-            } else {
-                 // Try ignoring unknown? Or map to space?
-                 // Log.w(TAG, "Unknown char: $char")
+        // Greedy longest-match tokenization
+        var i = 0
+        var droppedCount = 0
+        while (i < rawPhonemes.length) {
+            var matched = false
+            // Try lengths from maxKeyLen down to 1
+            for (len in minOf(maxKeyLen, rawPhonemes.length - i) downTo 1) {
+                val substr = rawPhonemes.substring(i, i + len)
+                if (keySet.contains(substr)) {
+                    idMap[substr]?.forEach { tokenIds.add(it.toLong()) }
+                    idMap[PAD]?.forEach { tokenIds.add(it.toLong()) }
+                    i += len
+                    matched = true
+                    break  // Exit the for loop on match
+                }
+            }
+            if (!matched) {
+                // Skip unknown symbol
+                droppedCount++
+                i++
             }
         }
+        
+        if (droppedCount > 0) {
+            Log.w(TAG, "Dropped $droppedCount unknown phoneme symbols during tokenization")
+        }
+        
         idMap[EOS]?.forEach { tokenIds.add(it.toLong()) }
         
         if (tokenIds.size <= 2) {

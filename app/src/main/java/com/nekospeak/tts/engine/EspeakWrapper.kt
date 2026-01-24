@@ -31,6 +31,8 @@ class EspeakWrapper {
     }
     
     fun textToPhonemesSafe(text: String, language: String): String = synchronized(globalLock) {
+        // Guard: don't call JNI if native library isn't initialized
+        if (!isNativeInitialized) return ""
         return textToPhonemes(text, language)
     }
 }

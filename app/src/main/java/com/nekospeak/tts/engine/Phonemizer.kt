@@ -125,11 +125,12 @@ class Phonemizer(private val context: Context) {
             for (length in 3 downTo 1) {
                 if (i + length <= phonemes.length) {
                     val substring = phonemes.substring(i, i + length)
-                    defaultVocab[substring]?.let { tokenId ->
+                    val tokenId = defaultVocab[substring]
+                    if (tokenId != null) {
                         tokens.add(tokenId)
                         i += length
                         matched = true
-                        return@let
+                        break  // Exit the for loop on match
                     }
                 }
             }
