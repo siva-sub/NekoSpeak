@@ -69,6 +69,7 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
     private var currentVoice: String = "alba"
     private var initialized = false
     @Volatile private var isReleased = false
+    @Volatile private var stopRequested = false
     
     // Preferences for generation parameters
     private val prefs: PrefsManager by lazy { PrefsManager(context) }
@@ -829,6 +830,9 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
         voice: String?,
         callback: (FloatArray) -> Unit
     ): Unit = withContext(Dispatchers.Default) {
+        // Reset stop flag at start of new generation
+        stopRequested = false
+        
         // Check if engine was released (concurrent stop/restart scenario)
         if (isReleased || !initialized) {
             Log.w(TAG, "Generate called but engine is released or not initialized")
@@ -1498,6 +1502,15 @@ class PocketTtsEngine(private val context: Context) : TtsEngine {
     override fun getVoices(): List<String> = voiceStates.keys.toList()
     
     fun getVoiceStates(): Map<String, PocketVoiceState> = voiceStates.toMap()
+    
+    /**
+     * Request the engine to stop current generation ASAP.
+     * Thread-safe - can be called from any thread.
+     */
+    override fun stop() {
+        stopRequested = true
+        Log.d(TAG, "Stop requested")
+    }
     
     override fun release() {
         isReleased = true

@@ -40,6 +40,13 @@ interface TtsEngine {
     fun release()
     
     /**
+     * Request the engine to stop current generation ASAP.
+     * Implementations should be thread-safe and fast.
+     * Default is no-op for engines that don't support mid-generation stop.
+     */
+    fun stop() {}
+    
+    /**
      * Check if engine is initialized
      */
     fun isInitialized(): Boolean
