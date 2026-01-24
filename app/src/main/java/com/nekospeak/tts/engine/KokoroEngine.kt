@@ -53,6 +53,8 @@ class KokoroEngine(private val context: Context) : TtsEngine {
     
     private var phonemizer: Phonemizer? = null
     
+    @Volatile private var stopFlag = false
+    
     override suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
             val prefs = com.nekospeak.tts.data.PrefsManager(context)
@@ -191,6 +193,9 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         voice: String?,
         callback: (FloatArray) -> Unit
     ) = withContext(Dispatchers.Default) {
+        // Reset stop flag at start of new generation
+        stopFlag = false
+        
         val session = ortSession ?: throw IllegalStateException("Not initialized")
         val env = ortEnv ?: throw IllegalStateException("Not initialized")
         val phonemizer = phonemizer ?: throw IllegalStateException("Phonemizer not initialized")
@@ -251,6 +256,9 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                 
                 if (tokens.isEmpty()) continue
                 
+                // Check for stop request
+                if (stopFlag) return@withContext
+                
                 // PERFORMANCE FIX: Immediate flush for first sentence
                 if (isFirstBatch) {
                     val startInf = System.currentTimeMillis()
@@ -294,11 +302,11 @@ class KokoroEngine(private val context: Context) : TtsEngine {
                 }
                 
                 // Check for cancellation between sentences
-                if (!isActive) break
+                if (!isActive || stopFlag) break
             }
             
             // Process remaining
-            if (currentBatchTokens.isNotEmpty() && isActive) {
+            if (currentBatchTokens.isNotEmpty() && isActive && !stopFlag) {
                 val startInf = System.currentTimeMillis()
                 processBatch(currentBatchTokens, env, session, voiceData, numVectors, finalSpeed, useIntSpeed, startInf, callback)
             }
@@ -318,6 +326,11 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         initialized = false
     }
     override fun isInitialized(): Boolean = initialized
+    
+    override fun stop() {
+        stopFlag = true
+        Log.d(TAG, "Stop requested")
+    }
 
     private fun processBatch(
         tokens: List<Int>,
@@ -400,6 +413,7 @@ class KokoroEngine(private val context: Context) : TtsEngine {
         inputIdsTensor.close()
         styleTensor.close()
         speedTensor.close()
+        audioTensor.close()  // Close extracted tensor
         outputs.close()
     }
 }

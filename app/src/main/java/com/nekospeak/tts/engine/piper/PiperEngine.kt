@@ -35,6 +35,8 @@ class PiperEngine(
     private var misakiG2P: G2P? = null
     private var misakiLexicon: Lexicon? = null
     private var initialized = false
+    
+    @Volatile private var stopFlag = false
 
     override suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -157,6 +159,9 @@ class PiperEngine(
         callback: (FloatArray) -> Unit
     ) {
         withContext(Dispatchers.Default) {
+        // Reset stop flag at start of new generation
+        stopFlag = false
+        
         if (!initialized) throw IllegalStateException("Not initialized")
         val session = ortSession!!
         val env = ortEnv!!
@@ -215,9 +220,11 @@ class PiperEngine(
         // If config is 1.0 and we want 2x speed, length_scale should be 0.5.
         
         val baseLengthScale = conf.inference.lengthScale
-        val finalLengthScale = baseLengthScale / speed
+        // Clamp speed to prevent divide by zero or extreme values
+        val safeSpeed = speed.coerceIn(0.5f, 2.0f)
+        val finalLengthScale = baseLengthScale / safeSpeed
         
-        Log.i(TAG, "Generating with speed=$speed, baseScale=$baseLengthScale, finalScale=$finalLengthScale. Token Count: ${tokenIds.size}")
+        Log.i(TAG, "Generating with speed=$safeSpeed, baseScale=$baseLengthScale, finalScale=$finalLengthScale. Token Count: ${tokenIds.size}")
         Log.d(TAG, "Token IDs: $tokenIds")
 
         val scales = floatArrayOf(
@@ -239,14 +246,26 @@ class PiperEngine(
         
         // 4. Run
         try {
+            // Check for stop request before expensive inference
+            if (stopFlag) {
+                inputTensor.close()
+                lengthTensor.close()
+                scalesTensor.close()
+                return@withContext
+            }
+            
             val outputs = session.run(inputs)
-            val audioTensor = outputs[0] as OnnxTensor // Output is usually just 'output'
+            val audioTensor = outputs[0] as OnnxTensor
             val floatBuf = audioTensor.floatBuffer
             val audio = FloatArray(floatBuf.remaining())
             floatBuf.get(audio)
             
-            callback(audio)
+            // Check for stop request before callback
+            if (!stopFlag) {
+                callback(audio)
+            }
             
+            audioTensor.close()  // Close extracted tensor
             outputs.close()
         } catch (e: Exception) {
             Log.e(TAG, "Inference failed", e)
@@ -259,8 +278,13 @@ class PiperEngine(
     }
 
     override fun getSampleRate(): Int = config?.audio?.sampleRate ?: 22050
-    override fun getVoices(): List<String> = listOf("en_US-amy-medium") // Hardcoded for now
+    override fun getVoices(): List<String> = listOf(voiceId)  // Return actual voice ID
     override fun isInitialized(): Boolean = initialized
+    
+    override fun stop() {
+        stopFlag = true
+        Log.d(TAG, "Stop requested")
+    }
     
     override fun release() {
         ortSession?.close()
