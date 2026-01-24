@@ -20,5 +20,20 @@ app/src/main/assets/kitten/
 .idea/
 *.log
 
+# Presentation/Documentation temp files
+SLIDES.md
+SLIDES.pdf
+slides_diagram.png
+slides.md
+slides.odf
+*.odp
+*.pptx
+
+# Build outputs and reports
+/app/release/
+*.hprof
+build/
+*.tmp
+
 # Reference
 piper_onnx_ref/

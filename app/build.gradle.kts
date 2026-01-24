@@ -12,8 +12,8 @@ android {
         applicationId = "com.nekospeak.tts"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "1.0.10"
+        versionCode = 11
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -116,6 +116,9 @@ dependencies {
 
     // JSON
     implementation("com.google.code.gson:gson:2.10.1")
+    
+    // JTransforms FFT library for GTCRN denoising STFT/iSTFT
+    implementation("com.github.wendykierp:JTransforms:3.2")
     
     // Testing
     testImplementation("junit:junit:4.13.2")

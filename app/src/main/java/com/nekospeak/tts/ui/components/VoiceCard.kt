@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 
 import androidx.compose.material3.*
@@ -28,15 +29,17 @@ fun VoiceCard(
     isSelected: Boolean,
     onVoiceSelected: () -> Unit,
     onDownload: () -> Unit,
+    onDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val isDownloaded = voice.downloadState == com.nekospeak.tts.data.DownloadState.Downloaded
     val isDownloading = voice.downloadState == com.nekospeak.tts.data.DownloadState.Downloading
+    val canDelete = voice.isCloned && onDelete != null
     
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(enabled = isDownloaded) { onVoiceSelected() },
+            .clickable { onVoiceSelected() },
         colors = CardDefaults.cardColors(
             containerColor = if (isSelected) 
                 MaterialTheme.colorScheme.primaryContainer 
@@ -97,8 +100,9 @@ fun VoiceCard(
                     }
                 }
                 
-                // Download Action
-                if (!isDownloaded && !isDownloading && voice.metadata != null) {
+                
+                // Download Action (show for Piper voices with metadata or celebrity voices without downloads)
+                if (!isDownloaded && !isDownloading) {
                      IconButton(onClick = onDownload) {
                          Icon(
                              imageVector = androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
@@ -106,6 +110,17 @@ fun VoiceCard(
                              tint = MaterialTheme.colorScheme.primary
                          )
                      }
+                }
+                
+                // Delete button for cloned voices
+                if (canDelete) {
+                    IconButton(onClick = { onDelete?.invoke() }) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                            contentDescription = "Delete Voice",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
                 }
             }
             

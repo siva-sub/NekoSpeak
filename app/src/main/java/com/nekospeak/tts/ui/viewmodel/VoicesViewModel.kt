@@ -11,6 +11,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.nekospeak.tts.data.VoiceDefinitions
+import com.nekospeak.tts.engine.pocket.PocketVoiceState
+import java.io.File
 
 data class Voice(
     val id: String,
@@ -20,7 +23,8 @@ data class Voice(
     val region: String, // "US" or "UK"
     val downloadState: com.nekospeak.tts.data.DownloadState = com.nekospeak.tts.data.DownloadState.Downloaded,
     val downloadProgress: Float = 0f,
-    val metadata: com.nekospeak.tts.data.VoiceInfo? = null
+    val metadata: com.nekospeak.tts.data.VoiceInfo? = null,
+    val isCloned: Boolean = false // True for user-cloned voices that can be deleted
 )
 
 enum class ViewMode {
@@ -52,7 +56,10 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
         
         val availableLanguages: List<String> = emptyList(),
         val availableRegions: List<String> = emptyList(),
-        val availableQualities: List<String> = emptyList()
+        val availableQualities: List<String> = emptyList(),
+        
+        // Processing status for voice encoding feedback
+        val processingStatus: String? = null // e.g., "Encoding celebrity voice: Oprah Winfrey..."
     )
     
     private val _uiState = MutableStateFlow(UiState())
@@ -175,6 +182,13 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
     }
     
     fun downloadVoice(voice: Voice) {
+        // Handle celebrity voices
+        if (VoiceDefinitions.requiresDownload(voice.id)) {
+            downloadCelebrityVoice(voice.id)
+            return
+        }
+        
+        // Handle Piper voices
         val meta = voice.metadata ?: return
         viewModelScope.launch {
             voiceDownloader.downloadVoice(voice.id, meta.onnxUrl, meta.jsonUrl)
@@ -217,6 +231,60 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
                             downloadState = com.nekospeak.tts.data.DownloadState.NotDownloaded // Initial, will refresh
                         )
                     }
+                }
+                currentModel == "pocket_v1" -> {
+                    val standardVoices = VoiceDefinitions.POCKET_VOICES.map { def ->
+                        Voice(
+                            id = def.id,
+                            name = def.name,
+                            language = if (def.region.contains("French")) "fr-fr" else "en-us", // Simple inference
+                            gender = def.gender,
+                            region = def.region,
+                            downloadState = com.nekospeak.tts.data.DownloadState.Downloaded // Bundled usually
+                        )
+                    }
+                    
+                    // Celebrity voices from HuggingFace (download on-demand)
+                    val celebrityVoices = VoiceDefinitions.CELEBRITY_VOICES.map { def ->
+                        val isDownloaded = com.nekospeak.tts.data.PocketVoiceRepository.isDownloaded(context, def.id)
+                        Voice(
+                            id = def.id,
+                            name = def.name,
+                            language = "en-us",
+                            gender = def.gender,
+                            region = def.region,
+                            downloadState = if (isDownloaded) 
+                                com.nekospeak.tts.data.DownloadState.Downloaded 
+                            else 
+                                com.nekospeak.tts.data.DownloadState.NotDownloaded
+                        )
+                    }
+                    
+                    // Cloned voices from local storage
+                    val clonedVoices = mutableListOf<Voice>()
+                    val clonedDir = File(context.filesDir, "pocket/cloned_voices")
+                    if (clonedDir.exists()) {
+                        clonedDir.listFiles()?.filter { it.extension == "bin" }?.forEach { file ->
+                            try {
+                                val state = PocketVoiceState.fromBytes(file.readBytes())
+                                clonedVoices.add(
+                                    Voice(
+                                        id = state.id,
+                                        name = "${state.displayName} (Cloned)",
+                                        language = "en-us", // Default
+                                        gender = "Cloned",
+                                        region = "Custom",
+                                        downloadState = com.nekospeak.tts.data.DownloadState.Downloaded,
+                                        isCloned = true // Mark as deletable
+                                    )
+                                )
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
+                        }
+                    }
+                    
+                    standardVoices + celebrityVoices + clonedVoices
                 }
                 else -> kokoroVoices
             }
@@ -293,19 +361,72 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
     
     fun selectVoice(voiceId: String) {
         val voice = allVoices.find { it.id == voiceId }
+        
+        // Check if this is a celebrity voice that needs download
+        if (VoiceDefinitions.requiresDownload(voiceId)) {
+            if (!com.nekospeak.tts.data.PocketVoiceRepository.isDownloaded(context, voiceId)) {
+                // Trigger download for celebrity voice
+                downloadCelebrityVoice(voiceId)
+                return
+            }
+        }
+        
         // Only select if downloaded
         if (voice != null && voice.downloadState == com.nekospeak.tts.data.DownloadState.Downloaded) {
             _uiState.update { it.copy(selectedVoiceId = voiceId) }
             val prefs = PrefsManager(context)
             prefs.currentVoice = voiceId
             
-            // Explicitly update model for ALL voice types to prevent getting stuck in wrong engine mode
+            // Detect which model this voice belongs to
+            val pocketVoiceIds = VoiceDefinitions.POCKET_VOICES.map { it.id }
+            val celebrityVoiceIds = VoiceDefinitions.CELEBRITY_VOICES.map { it.id }
+            val isClonedVoice = java.io.File(context.filesDir, "pocket/cloned_voices/$voiceId.bin").exists()
+            
             val newModel = when {
+                // Kitten voices
                 voiceId.startsWith("expr-voice-") -> "kitten_nano"
+                // Kokoro voices
                 voiceId.startsWith("af_") || voiceId.startsWith("am_") || voiceId.startsWith("bf_") || voiceId.startsWith("bm_") -> "kokoro_v1.0"
-                else -> "piper_$voiceId" // Piper voices
+                // Pocket-TTS standard voices, celebrity voices, or cloned voices
+                pocketVoiceIds.contains(voiceId) || celebrityVoiceIds.contains(voiceId) || isClonedVoice -> "pocket_v1"
+                // Default to Piper voices
+                else -> "piper_$voiceId"
             }
+            android.util.Log.i("VoicesViewModel", "selectVoice($voiceId) -> model=$newModel")
             prefs.currentModel = newModel
+        }
+    }
+    
+    /**
+     * Download a celebrity voice from HuggingFace.
+     */
+    fun downloadCelebrityVoice(voiceId: String) {
+        viewModelScope.launch {
+            _uiState.update { 
+                val updated = allVoices.map { v ->
+                    if (v.id == voiceId) v.copy(downloadState = com.nekospeak.tts.data.DownloadState.Downloading)
+                    else v
+                }
+                it.copy(voices = updated)
+            }
+            
+            com.nekospeak.tts.data.PocketVoiceRepository.downloadVoice(context, voiceId) { success ->
+                viewModelScope.launch {
+                    if (success) {
+                        // Reload voices to pick up the new download
+                        loadVoices()
+                    } else {
+                        // Reset download state on failure
+                        _uiState.update { 
+                            val updated = allVoices.map { v ->
+                                if (v.id == voiceId) v.copy(downloadState = com.nekospeak.tts.data.DownloadState.NotDownloaded)
+                                else v
+                            }
+                            it.copy(voices = updated)
+                        }
+                    }
+                }
+            }
         }
     }
     
@@ -335,6 +456,14 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
             )
         }
         applyFilters()
+    }
+    
+    /**
+     * Set processing status message to show in the UI.
+     * Pass null to clear the status.
+     */
+    fun setProcessingStatus(status: String?) {
+        _uiState.update { it.copy(processingStatus = status) }
     }
     
     fun selectQuality(quality: String?) {
@@ -381,6 +510,88 @@ class VoicesViewModel(application: Application) : AndroidViewModel(application) 
             lang.contains("japanese") || lang.contains("ja_") -> "こんにちは、NekoSpeakです。"
             lang.contains("chinese") || lang.contains("zh_") -> "你好，我是NekoSpeak。"
             else -> "Hello, I am NekoSpeak."
+        }
+    }
+
+    fun cloneVoice(path: String, name: String, transcript: String = "") {
+        android.util.Log.i("VoicesViewModel", "cloneVoice called: path=$path, name=$name")
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _uiState.update { it.copy(isLoading = true, processingStatus = "Processing voice: $name...") } 
+            try {
+                // Check if file exists
+                val sourceFile = java.io.File(path)
+                if (!sourceFile.exists()) {
+                    android.util.Log.e("VoicesViewModel", "Audio file does not exist: $path")
+                    _uiState.update { it.copy(isLoading = false, processingStatus = null) }
+                    return@launch
+                }
+                android.util.Log.i("VoicesViewModel", "Audio file exists: ${sourceFile.length()} bytes")
+                
+                // CRITICAL: Copy file to permanent location BEFORE engine init
+                // The engine init takes ~10s, during which cache files may be deleted
+                val voicesDir = java.io.File(context.filesDir, "pocket/voice_clone_input")
+                voicesDir.mkdirs()
+                val permanentFile = java.io.File(voicesDir, "input_${System.currentTimeMillis()}.wav")
+                sourceFile.copyTo(permanentFile, overwrite = true)
+                android.util.Log.i("VoicesViewModel", "Copied to permanent location: ${permanentFile.absolutePath}")
+                
+                // Update status: Initializing engine
+                _uiState.update { it.copy(processingStatus = "Encoding voice: $name (this may take a moment)...") }
+                
+                // Initialize a temporary engine for cloning
+                val engine = com.nekospeak.tts.engine.pocket.PocketTtsEngine(context)
+                android.util.Log.i("VoicesViewModel", "Initializing PocketTtsEngine for cloning...")
+                if (engine.initialize()) {
+                    android.util.Log.i("VoicesViewModel", "Engine initialized, calling cloneVoice...")
+                    // TODO: Use transcript for text conditioning in voice cloning
+                    val voiceId = engine.cloneVoice(permanentFile.absolutePath, name)
+                    if (voiceId != null) {
+                        android.util.Log.i("VoicesViewModel", "Voice cloned successfully: $voiceId")
+                    } else {
+                        android.util.Log.e("VoicesViewModel", "cloneVoice returned null")
+                    }
+                    engine.release()
+                    
+                    // Clean up temporary input file
+                    permanentFile.delete()
+                    
+                    loadVoices() // Refresh list to show new voice
+                } else {
+                    android.util.Log.e("VoicesViewModel", "Failed to initialize engine for cloning")
+                    permanentFile.delete()
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("VoicesViewModel", "Error in cloneVoice", e)
+                e.printStackTrace()
+            }
+            _uiState.update { it.copy(isLoading = false, processingStatus = null) }
+        }
+    }
+    
+    /**
+     * Delete a cloned voice.
+     */
+    fun deleteClonedVoice(voiceId: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                // Delete the voice file
+                val voiceFile = File(context.filesDir, "pocket/cloned_voices/$voiceId.bin")
+                if (voiceFile.exists()) {
+                    voiceFile.delete()
+                    android.util.Log.i("VoicesViewModel", "Deleted cloned voice: $voiceId")
+                }
+                
+                // Also delete cached embedding if exists
+                val cacheFile = File(context.cacheDir, "pocket/$voiceId.emb")
+                if (cacheFile.exists()) {
+                    cacheFile.delete()
+                }
+                
+                // Refresh the voice list
+                loadVoices()
+            } catch (e: Exception) {
+                android.util.Log.e("VoicesViewModel", "Error deleting cloned voice", e)
+            }
         }
     }
 }

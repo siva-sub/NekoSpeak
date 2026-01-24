@@ -1,7 +1,7 @@
 package com.nekospeak.tts.engine
 
 /**
- * Interface for TTS engines (Kokoro, VibeVoice)
+ * Interface for TTS engines (Kokoro, Piper, Pocket-TTS)
  */
 interface TtsEngine {
     /**
@@ -43,4 +43,34 @@ interface TtsEngine {
      * Check if engine is initialized
      */
     fun isInitialized(): Boolean
+    
+    // ========== Voice Cloning Support (Optional) ==========
+    
+    /**
+     * Check if this engine supports voice cloning
+     * @return true if cloneVoice() can be called
+     */
+    fun supportsVoiceCloning(): Boolean = false
+    
+    /**
+     * Clone a voice from an audio file (if supported)
+     * @param audioPath Path to the audio file (WAV format, 24kHz recommended)
+     * @param voiceName Display name for the cloned voice
+     * @return ID of the cloned voice, or null if cloning failed
+     */
+    suspend fun cloneVoice(audioPath: String, voiceName: String): String? = null
+    
+    /**
+     * Get list of cloned voice IDs (if voice cloning is supported)
+     * @return List of cloned voice IDs
+     */
+    fun getClonedVoices(): List<String> = emptyList()
+    
+    /**
+     * Delete a cloned voice (if voice cloning is supported)
+     * @param voiceId ID of the voice to delete
+     * @return true if deletion succeeded
+     */
+    fun deleteClonedVoice(voiceId: String): Boolean = false
 }
+

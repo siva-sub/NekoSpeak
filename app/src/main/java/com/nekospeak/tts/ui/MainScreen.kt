@@ -14,7 +14,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -26,9 +28,11 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.nekospeak.tts.data.PrefsManager
 import com.nekospeak.tts.ui.navigation.Screen
-import com.nekospeak.tts.ui.screens.OnboardingScreen
 import com.nekospeak.tts.ui.screens.SettingsScreen
 import com.nekospeak.tts.ui.screens.VoicesScreen
+import com.nekospeak.tts.ui.screens.VoiceRecorderScreen
+import com.nekospeak.tts.ui.screens.OnboardingScreen
+import com.nekospeak.tts.ui.screens.ModelManagerScreen
 
 @Composable
 fun MainScreen() {
@@ -40,7 +44,16 @@ fun MainScreen() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     
-    val showBottomBar = currentRoute != Screen.Onboarding.route
+    // Hide bottom bar on certain screens
+    val hideBottomBarRoutes = listOf(
+        Screen.Onboarding.route,
+        Screen.VoiceRecorder.route,
+        Screen.ModelManager.route
+    )
+    val showBottomBar = currentRoute !in hideBottomBarRoutes
+    
+    // State for voice cloning callback (Path, Name, Transcript)
+    var pendingVoiceCloneData by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     
     Scaffold(
         bottomBar = {
@@ -60,11 +73,28 @@ fun MainScreen() {
             }
             
             composable(Screen.Voices.route) {
-                VoicesScreen(navController = navController)
+                VoicesScreen(
+                    navController = navController,
+                    pendingVoiceCloneData = pendingVoiceCloneData,
+                    onVoiceCloneHandled = { pendingVoiceCloneData = null }
+                )
             }
             
             composable(Screen.Settings.route) {
                 SettingsScreen(navController = navController)
+            }
+            
+            composable(Screen.VoiceRecorder.route) {
+                VoiceRecorderScreen(
+                    navController = navController,
+                    onVoiceRecorded = { path: String, name: String, transcript: String ->
+                        pendingVoiceCloneData = Triple(path, name, transcript)
+                    }
+                )
+            }
+            
+            composable(Screen.ModelManager.route) {
+                com.nekospeak.tts.ui.screens.ModelManagerScreen(navController = navController)
             }
         }
     }

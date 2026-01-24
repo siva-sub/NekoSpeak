@@ -30,7 +30,9 @@ import java.util.Locale
 @Composable
 fun VoicesScreen(
     navController: NavController,
-    viewModel: VoicesViewModel = viewModel()
+    viewModel: VoicesViewModel = viewModel(),
+    pendingVoiceCloneData: Triple<String, String, String>? = null, // (path, name, transcript)
+    onVoiceCloneHandled: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -45,6 +47,14 @@ fun VoicesScreen(
     var showRegionModal by remember { mutableStateOf(false) }
     var showGenderModal by remember { mutableStateOf(false) }
     var showQualityModal by remember { mutableStateOf(false) }
+    
+    // Voice cloning state
+    var showCloneOptionsSheet by remember { mutableStateOf(false) }
+    var showVoiceNameDialog by remember { mutableStateOf(false) }
+    var voiceClonePath by remember { mutableStateOf<String?>(null) }
+    var voiceCloneName by remember { mutableStateOf("") }
+    var voiceCloneTranscript by remember { mutableStateOf("") } // Kept for API compat but not used
+    var isCloning by remember { mutableStateOf(false) }
     
     DisposableEffect(Unit) {
         // Explicitly use our own engine package to ensure we test NekoSpeak
@@ -73,6 +83,40 @@ fun VoicesScreen(
         viewModel.loadVoices() // Refresh list (in case model changed)
         viewModel.selectVoice(prefs.currentVoice)
     }
+    
+    // Handle pending voice clone from VoiceRecorderScreen
+    LaunchedEffect(pendingVoiceCloneData) {
+        pendingVoiceCloneData?.let { (path, name, transcript) ->
+            if (name.isNotEmpty()) {
+                // Clone directly with recorded audio and transcript
+                viewModel.cloneVoice(path, name, transcript)
+            } else {
+                voiceClonePath = path
+                voiceCloneTranscript = transcript
+                showVoiceNameDialog = true
+            }
+            onVoiceCloneHandled()
+        }
+    }
+    
+    // File picker for audio upload
+    val audioPickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            // Copy to cache and get path
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val cacheFile = java.io.File(context.cacheDir, "voice_upload_${System.currentTimeMillis()}.wav")
+            inputStream?.use { input ->
+                cacheFile.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            voiceClonePath = cacheFile.absolutePath
+            voiceCloneTranscript = "" // Transcript not used - cloning is audio-only
+            showVoiceNameDialog = true // Go directly to name dialog (skip transcript)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -87,6 +131,17 @@ fun VoicesScreen(
                     }
                 }
             )
+        },
+
+        floatingActionButton = {
+            if (prefs.currentModel == "pocket_v1") {
+                ExtendedFloatingActionButton(
+                    onClick = { showCloneOptionsSheet = true },
+                    icon = { Icon(Icons.Default.Add, "Clone Voice") },
+                    text = { Text("Clone Voice") },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            }
         },
         bottomBar = {
             // Test Speech Bar
@@ -146,6 +201,10 @@ fun VoicesScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            if (uiState.isLoading) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
             // Search Bar
             OutlinedTextField(
                 value = uiState.searchQuery,
@@ -215,6 +274,35 @@ fun VoicesScreen(
                 }
             }
             
+            // Processing Status Banner - shows when encoding voices
+            uiState.processingStatus?.let { status ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = status,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+            
             if (uiState.filteredVoices.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize().weight(1f),
@@ -242,7 +330,8 @@ fun VoicesScreen(
                             voice = voice,
                             isSelected = voice.id == uiState.selectedVoiceId,
                             onVoiceSelected = { viewModel.selectVoice(voice.id) },
-                            onDownload = { viewModel.downloadVoice(voice) }
+                            onDownload = { viewModel.downloadVoice(voice) },
+                            onDelete = if (voice.isCloned) {{ viewModel.deleteClonedVoice(voice.id) }} else null
                         )
                     }
                 }
@@ -368,6 +457,106 @@ fun VoicesScreen(
                     Button(onClick={viewModel.selectQuality(null); showQualityModal=false}, modifier=Modifier.padding(16.dp).fillMaxWidth()) { Text("Clear Quality") }
                 }
             }
+        }
+        
+        // Voice Cloning Options Sheet
+        if (showCloneOptionsSheet) {
+            ModalBottomSheet(onDismissRequest = { showCloneOptionsSheet = false }) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 32.dp)
+                ) {
+                    Text(
+                        "Clone a Voice",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(16.dp)
+                    )
+                    HorizontalDivider()
+                    
+                    // Record option
+                    ListItem(
+                        headlineContent = { Text("Record Voice") },
+                        supportingContent = { Text("Record 5-10 seconds of speech") },
+                        leadingContent = { Icon(Icons.Default.PlayArrow, null) },
+                        modifier = Modifier.clickable {
+                            showCloneOptionsSheet = false
+                            navController.navigate(com.nekospeak.tts.ui.navigation.Screen.VoiceRecorder.route)
+                        }
+                    )
+                    
+                    // Upload option
+                    ListItem(
+                        headlineContent = { Text("Upload Audio File") },
+                        supportingContent = { Text("Select a WAV or MP3 file") },
+                        leadingContent = { Icon(Icons.Default.Create, null) },
+                        modifier = Modifier.clickable {
+                            showCloneOptionsSheet = false
+                            audioPickerLauncher.launch("audio/*")
+                        }
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+        }
+        
+        // NOTE: Transcript dialog removed - transcripts don't improve voice cloning
+        // Voice embeddings come purely from mimi_encoder(audio), no text involved
+        
+        // Voice Name Dialog (step 2 for file upload, or direct from recording)
+        if (showVoiceNameDialog && voiceClonePath != null) {
+            AlertDialog(
+                onDismissRequest = { 
+                    showVoiceNameDialog = false
+                    voiceClonePath = null
+                    voiceCloneName = ""
+                    voiceCloneTranscript = ""
+                },
+                title = { Text("Name Your Voice") },
+                text = {
+                    Column {
+                        Text(
+                            "Give your cloned voice a name so you can find it later.",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = voiceCloneName,
+                            onValueChange = { voiceCloneName = it },
+                            label = { Text("Voice Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.cloneVoice(voiceClonePath!!, voiceCloneName, voiceCloneTranscript)
+                            showVoiceNameDialog = false
+                            voiceClonePath = null
+                            voiceCloneName = ""
+                            voiceCloneTranscript = ""
+                        },
+                        enabled = voiceCloneName.isNotBlank()
+                    ) {
+                        Text("Clone Voice")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { 
+                            showVoiceNameDialog = false 
+                            voiceClonePath = null
+                            voiceCloneName = ""
+                            voiceCloneTranscript = ""
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

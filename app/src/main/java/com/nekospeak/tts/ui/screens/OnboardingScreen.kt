@@ -41,33 +41,62 @@ fun OnboardingScreen(navController: NavController) {
     var selectedModel by remember { mutableStateOf("kokoro_v1.0") }
     var selectedVoice by remember { mutableStateOf("af_heart") }
     
-    // Default voices for onboarding
-    val kokoroStarters = listOf(
-        "af_heart" to "Heart",
-        "am_adam" to "Adam",
-        "af_bella" to "Bella"
-    )
-    val kittenStarters = listOf(
-        "expr-voice-2-f" to "Kitten F2",
-        "expr-voice-2-m" to "Kitten M2"
-    )
+    // Model Installation State
+    var isModelInstalled by remember { mutableStateOf(false) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableFloatStateOf(0f) }
     
-    // Update default voice when model changes if invalid
+    // Check installation status when model changes
     LaunchedEffect(selectedModel) {
-        val validVoices = when (selectedModel) {
-            "kokoro_v1.0" -> kokoroStarters.map { it.first }
-            "kitten_nano" -> kittenStarters.map { it.first }
-            "piper_en_US-amy-low" -> listOf("en_US-amy-low")
-            else -> emptyList()
+        // Piper is bundled/managed differently usually, but we check repository if defined
+        if (selectedModel.startsWith("piper")) {
+            isModelInstalled = true // Assuming bundled or managed by PiperEngine for starters
+        } else {
+            isModelInstalled = com.nekospeak.tts.data.ModelRepository.isInstalled(context, selectedModel)
         }
         
-        if (selectedVoice !in validVoices) {
-            selectedVoice = validVoices.firstOrNull() ?: "af_heart"
+        // Reset voices logic
+        val voices = if (selectedModel.startsWith("piper")) {
+            listOf(com.nekospeak.tts.data.VoiceDefinition("en_US-amy-low", "Amy (Low)", "Female", "US", null, null, "piper"))
+        } else if (selectedModel == "pocket_v1") {
+            // Show only bundled voices for onboarding (not celebrity voices)
+            com.nekospeak.tts.data.VoiceDefinitions.POCKET_VOICES
+        } else {
+            com.nekospeak.tts.data.VoiceDefinitions.getVoicesForModel(selectedModel)
         }
+        
+        val validIds = voices.map { it.id }
+        if (selectedVoice !in validIds) {
+            selectedVoice = validIds.firstOrNull() ?: ""
+        }
+    }
+    
+    // Observe download progress
+    DisposableEffect(selectedModel) {
+        val flow = com.nekospeak.tts.data.ModelRepository.getDownloadProgress(selectedModel)
+        if (flow != null) {
+            isDownloading = true
+            // In a real app we would collect the flow here to update progress
+        }
+        onDispose { }
     }
 
     val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
+    
+    // Monitor download progress flow if active
+    LaunchedEffect(selectedModel, isDownloading) {
+        if (isDownloading) {
+             val flow = com.nekospeak.tts.data.ModelRepository.getDownloadProgress(selectedModel)
+             flow?.collect { 
+                 downloadProgress = it
+                 if (it >= 1.0f) {
+                     isDownloading = false
+                     isModelInstalled = true
+                 }
+             }
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -110,7 +139,8 @@ fun OnboardingScreen(navController: NavController) {
                 state = pagerState,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxWidth(),
+                userScrollEnabled = false // Force navigation via buttons for flow control
             ) { page ->
                 Column(
                     modifier = Modifier.fillMaxSize(),
@@ -131,19 +161,29 @@ fun OnboardingScreen(navController: NavController) {
                             ModelSelectionCard(
                                 title = "Kokoro v1.0",
                                 description = "Expressive, realistic, and emotional. Best for short content.",
-                                warning = "CPU Intensive (Slower)",
+                                warning = if(!com.nekospeak.tts.data.ModelRepository.isInstalled(context, "kokoro_v1.0")) "Download Required" else "CPU Intensive",
                                 isSelected = selectedModel == "kokoro_v1.0",
                                 onClick = { selectedModel = "kokoro_v1.0" }
                             )
                             
                             Spacer(modifier = Modifier.height(12.dp))
                             
-                            ModelSelectionCard(
+                                ModelSelectionCard(
                                 title = "Kitten TTS Nano",
                                 description = "Lightning fast and battery efficient. Ideal for long books.",
-                                warning = null,
+                                warning = if(!com.nekospeak.tts.data.ModelRepository.isInstalled(context, "kitten_nano")) "Download Required" else null,
                                 isSelected = selectedModel == "kitten_nano",
                                 onClick = { selectedModel = "kitten_nano" }
+                            )
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            ModelSelectionCard(
+                                title = "Pocket-TTS",
+                                description = "Voice cloning engine. Create custom voices.",
+                                warning = if(!com.nekospeak.tts.data.ModelRepository.isInstalled(context, "pocket_v1")) "Download Required (~70MB)" else "Experimental",
+                                isSelected = selectedModel == "pocket_v1",
+                                onClick = { selectedModel = "pocket_v1" }
                             )
                             
                             Spacer(modifier = Modifier.height(12.dp))
@@ -166,23 +206,36 @@ fun OnboardingScreen(navController: NavController) {
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                             )
                             
-                            val voices = when (selectedModel) {
-                                "kokoro_v1.0" -> kokoroStarters
-                                "kitten_nano" -> kittenStarters
-                                "piper_en_US-amy-low" -> listOf("en_US-amy-low" to "Amy (Low)")
-                                else -> kokoroStarters
+                            val voices = if (selectedModel.startsWith("piper")) {
+                                listOf(com.nekospeak.tts.data.VoiceDefinition("en_US-amy-low", "Amy (Low)", "Female", "US", null, null, "piper"))
+                            } else if (selectedModel == "pocket_v1") {
+                                // Show only bundled voices for onboarding (not celebrity voices)
+                                com.nekospeak.tts.data.VoiceDefinitions.POCKET_VOICES
+                            } else {
+                                com.nekospeak.tts.data.VoiceDefinitions.getVoicesForModel(selectedModel)
                             }
                             
                             // Simple list for voices
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                voices.forEach { (id, name) ->
+                                voices.forEach { voice ->
                                     VoiceChip(
-                                        name = name,
-                                        isSelected = selectedVoice == id,
-                                        onClick = { selectedVoice = id },
+                                        name = "${voice.name} (${voice.gender})",
+                                        isSelected = selectedVoice == voice.id,
+                                        onClick = { selectedVoice = voice.id },
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                 }
+                            }
+                            
+                            if (selectedModel == "pocket_v1") {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text(
+                                    "Note: Pocket-TTS voices are experimental. See HuggingFace for licenses.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                         2 -> {
@@ -262,14 +315,15 @@ fun OnboardingScreen(navController: NavController) {
             // Navigation Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Back / Skip logic could go here, but keeping it simple for now
                 if (pagerState.currentPage > 0) {
                      TextButton(
                         onClick = { 
                             scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) }
-                        }
+                        },
+                        enabled = !isDownloading
                     ) {
                         Text("Back", color = Color.White.copy(alpha = 0.7f))
                     }
@@ -278,12 +332,50 @@ fun OnboardingScreen(navController: NavController) {
                 }
 
                 if (pagerState.currentPage < 2) {
-                    Button(
-                        onClick = { 
-                            scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                    // Logic for Next/Download
+                    if (!isModelInstalled && pagerState.currentPage == 0) {
+                        if (isDownloading) {
+                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                 CircularProgressIndicator(
+                                     progress = { downloadProgress },
+                                     modifier = Modifier.size(24.dp),
+                                     color = MaterialTheme.colorScheme.primary,
+                                 )
+                                 Spacer(Modifier.width(8.dp))
+                                 Text("${(downloadProgress * 100).toInt()}%", color = Color.White)
+                             }
+                        } else {
+                            Button(
+                                onClick = { 
+                                    isDownloading = true
+                                    scope.launch {
+                                        com.nekospeak.tts.data.ModelRepository.downloadModel(context, selectedModel) { success ->
+                                            if (success) {
+                                                isModelInstalled = true
+                                                isDownloading = false
+                                                scope.launch { pagerState.animateScrollToPage(1) }
+                                            } else {
+                                                isDownloading = false
+                                                // Handle error (show toast/snackbar)
+                                            }
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                            ) {
+                                Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Download & Continue")
+                            }
                         }
-                    ) {
-                        Text("Next")
+                    } else {
+                        Button(
+                            onClick = { 
+                                scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) }
+                            }
+                        ) {
+                            Text("Next")
+                        }
                     }
                 } else {
                     Button(

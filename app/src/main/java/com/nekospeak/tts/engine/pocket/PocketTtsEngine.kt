@@ -1,0 +1,1249 @@
+package com.nekospeak.tts.engine.pocket
+
+import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OrtEnvironment
+import ai.onnxruntime.OrtSession
+import android.content.Context
+import android.util.Log
+import com.nekospeak.tts.engine.TtsEngine
+import com.nekospeak.tts.data.PrefsManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.nio.FloatBuffer
+import java.nio.LongBuffer
+
+/**
+ * Pocket-TTS Engine implementation with voice cloning support.
+ * 
+ * Uses 5 ONNX models:
+ * - mimi_encoder: Audio -> Speaker latents (for voice cloning)
+ * - text_conditioner: Text tokens -> Embeddings
+ * - flow_lm_main: Backbone transformer
+ * - flow_lm_flow: Flow matching ODE solver step
+ * - mimi_decoder: Latents -> Audio
+ */
+class PocketTtsEngine(private val context: Context) : TtsEngine {
+    
+    companion object {
+        private const val TAG = "PocketTtsEngine"
+        const val SAMPLE_RATE = 24000
+        const val LATENT_DIM = 32
+        const val EMBED_DIM = 1024
+        const val ODE_STEPS = 20  // More steps = better quality (default: 10, max: 50)
+        
+        // Model paths (relative to filesDir/pocket/models/)
+        // Note: mimi_encoder and text_conditioner are FP32 only (no INT8 version available)
+        private const val MODELS_DIR = "pocket/models"
+        private const val MODEL_MIMI_ENCODER = "mimi_encoder.onnx"
+        private const val MODEL_TEXT_CONDITIONER = "text_conditioner.onnx"
+        private const val MODEL_FLOW_LM_MAIN = "flow_lm_main_int8.onnx"
+        private const val MODEL_FLOW_LM_FLOW = "flow_lm_flow_int8.onnx"
+        private const val MODEL_MIMI_DECODER = "mimi_decoder_int8.onnx"
+        
+        // Bundled voices path
+        private const val BUNDLED_VOICES_DIR = "pocket/voices"
+        
+        // Cloned voices path
+        private const val CLONED_VOICES_DIR = "pocket/cloned_voices"
+    }
+    
+    private var ortEnv: OrtEnvironment? = null
+    private var mimiEncoder: OrtSession? = null
+    private var textConditioner: OrtSession? = null
+    private var flowLmMain: OrtSession? = null
+    private var flowLmFlow: OrtSession? = null
+    private var mimiDecoder: OrtSession? = null
+    
+    private var mimiCodec: MimiCodec? = null
+    private var odeSolver: OdeSolver? = null
+    private var tokenizer: PocketTokenizer? = null
+    private var gtcrnDenoiser: GtcrnDenoiser? = null
+    
+    private val voiceStates = mutableMapOf<String, PocketVoiceState>()
+    private var currentVoice: String = "alba"
+    private var initialized = false
+    @Volatile private var isReleased = false
+    
+    // Preferences for generation parameters
+    private val prefs: PrefsManager by lazy { PrefsManager(context) }
+    
+    // Flow LM state (for autoregressive generation) - map of state name to tensor data
+    // Each entry has: name -> Pair(type: String, data: Any) where data is FloatArray or LongArray
+    private var flowLmState: MutableMap<String, Pair<String, Any>>? = null
+    
+    override suspend fun initialize(): Boolean = withContext(Dispatchers.IO) {
+        try {
+            Log.i(TAG, "Initializing Pocket-TTS Engine...")
+            
+            ortEnv = OrtEnvironment.getEnvironment()
+            
+            val modelsDir = File(context.filesDir, MODELS_DIR)
+            if (!modelsDir.exists()) {
+                Log.w(TAG, "Models directory not found. Models need to be downloaded first.")
+                return@withContext false
+            }
+            
+            // Check if all models exist
+            val modelFiles = listOf(
+                MODEL_MIMI_ENCODER,
+                MODEL_TEXT_CONDITIONER,
+                MODEL_FLOW_LM_MAIN,
+                MODEL_FLOW_LM_FLOW,
+                MODEL_MIMI_DECODER
+            )
+            
+            for (model in modelFiles) {
+                val modelFile = File(modelsDir, model)
+                if (!modelFile.exists()) {
+                    Log.w(TAG, "Model not found: $model. Download required.")
+                    return@withContext false
+                }
+            }
+            
+            // Load all ONNX sessions
+            val sessionOptions = createSessionOptions()
+            
+            Log.d(TAG, "Loading ONNX models...")
+            mimiEncoder = loadModel(modelsDir, MODEL_MIMI_ENCODER, sessionOptions)
+            textConditioner = loadModel(modelsDir, MODEL_TEXT_CONDITIONER, sessionOptions)
+            flowLmMain = loadModel(modelsDir, MODEL_FLOW_LM_MAIN, sessionOptions)
+            flowLmFlow = loadModel(modelsDir, MODEL_FLOW_LM_FLOW, sessionOptions)
+            mimiDecoder = loadModel(modelsDir, MODEL_MIMI_DECODER, sessionOptions)
+            
+            // Initialize codec and solver
+            mimiCodec = MimiCodec(mimiEncoder!!, mimiDecoder!!, ortEnv!!)
+            odeSolver = OdeSolver(flowLmFlow!!, ortEnv!!, ODE_STEPS)
+            
+            // Initialize tokenizer
+            tokenizer = PocketTokenizer(context)
+            tokenizer?.load()
+            
+            // Initialize GTCRN denoiser for audio preprocessing (downloads model on first use)
+            gtcrnDenoiser = GtcrnDenoiser(context)
+            // Initialize async - don't block engine init, model downloads on-demand
+            CoroutineScope(Dispatchers.IO).launch {
+                gtcrnDenoiser?.initialize()
+            }
+            
+            // Load available voices
+            loadBundledVoices()
+            loadClonedVoices()
+            
+            Log.i(TAG, "Pocket-TTS initialized with ${voiceStates.size} voices")
+            initialized = true
+            true
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Initialization failed", e)
+            e.printStackTrace()
+            false
+        }
+    }
+    
+    private fun createSessionOptions(): OrtSession.SessionOptions {
+        val prefs = com.nekospeak.tts.data.PrefsManager(context)
+        return OrtSession.SessionOptions().apply {
+            setIntraOpNumThreads(prefs.cpuThreads)
+            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        }
+    }
+    
+    private fun loadModel(dir: File, name: String, options: OrtSession.SessionOptions): OrtSession {
+        val modelFile = File(dir, name)
+        Log.d(TAG, "Loading model: ${modelFile.absolutePath} (${modelFile.length() / 1024 / 1024}MB)")
+        return ortEnv!!.createSession(modelFile.absolutePath, options)
+    }
+    
+    // Voice embeddings cache: voiceId -> FloatArray of shape [N * 1024] flattened
+    private val voiceEmbeddings = mutableMapOf<String, FloatArray>()
+    private val voiceEmbeddingFrames = mutableMapOf<String, Int>()
+    
+    private val VOICE_CACHE_DIR = "pocket/voice_cache"
+    
+    private suspend fun loadBundledVoices() = withContext(Dispatchers.IO) {
+        val voicesDir = File(context.filesDir, BUNDLED_VOICES_DIR)
+        val cacheDir = File(context.filesDir, VOICE_CACHE_DIR)
+        cacheDir.mkdirs()
+        
+        if (!voicesDir.exists()) {
+            Log.d(TAG, "No bundled voices directory at ${voicesDir.absolutePath}")
+            return@withContext
+        }
+        
+        val encoder = mimiEncoder ?: run {
+            Log.e(TAG, "mimi_encoder not initialized, cannot encode voices")
+            return@withContext
+        }
+        
+        voicesDir.listFiles()?.filter { it.extension == "wav" }?.forEach { wavFile ->
+            try {
+                val voiceId = wavFile.nameWithoutExtension
+                val cacheFile = File(cacheDir, "$voiceId.emb")
+                
+                // Try to load from cache first (fast path)
+                val embeddings = if (cacheFile.exists()) {
+                    Log.d(TAG, "Loading cached voice: $voiceId")
+                    loadCachedEmbedding(cacheFile)
+                } else {
+                    // Encode from WAV (slow path - only first time)
+                    Log.d(TAG, "Encoding voice: $voiceId from ${wavFile.name}")
+                    val encoded = encodeVoiceFromWav(wavFile, encoder)
+                    if (encoded != null) {
+                        // Save to cache for next time
+                        saveCachedEmbedding(cacheFile, encoded.first, encoded.second)
+                    }
+                    encoded
+                }
+                
+                if (embeddings != null) {
+                    voiceEmbeddings[voiceId] = embeddings.first
+                    voiceEmbeddingFrames[voiceId] = embeddings.second
+                    
+                    // Also create a PocketVoiceState for compatibility
+                    voiceStates[voiceId] = PocketVoiceState(
+                        id = voiceId,
+                        displayName = voiceId.replace("_", " ").replaceFirstChar { it.uppercase() },
+                        latents = embeddings.first,
+                        numFrames = embeddings.second,
+                        isBundled = true
+                    )
+                    
+                    Log.i(TAG, "Loaded voice: $voiceId (${embeddings.second} frames)")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load voice: ${wavFile.name}", e)
+            }
+        }
+        
+        Log.i(TAG, "Loaded ${voiceEmbeddings.size} bundled voices")
+        
+        // Also load downloaded celebrity voices from pocket/downloaded_voices
+        val downloadedVoicesDir = File(context.filesDir, "pocket/downloaded_voices")
+        if (downloadedVoicesDir.exists()) {
+            downloadedVoicesDir.listFiles()?.filter { it.extension == "wav" }?.forEach { wavFile ->
+                try {
+                    val voiceId = wavFile.nameWithoutExtension
+                    val cacheFile = File(cacheDir, "$voiceId.emb")
+                    
+                    // Try to load from cache first (fast path)
+                    val embeddings = if (cacheFile.exists()) {
+                        Log.d(TAG, "Loading cached celebrity voice: $voiceId")
+                        loadCachedEmbedding(cacheFile)
+                    } else {
+                        // Encode from WAV (slow path - only first time)
+                        Log.d(TAG, "Encoding celebrity voice: $voiceId from ${wavFile.name}")
+                        val encoded = encodeVoiceFromWav(wavFile, encoder)
+                        if (encoded != null) {
+                            // Save to cache for next time
+                            saveCachedEmbedding(cacheFile, encoded.first, encoded.second)
+                        }
+                        encoded
+                    }
+                    
+                    if (embeddings != null) {
+                        voiceEmbeddings[voiceId] = embeddings.first
+                        voiceEmbeddingFrames[voiceId] = embeddings.second
+                        
+                        // Create a PocketVoiceState for compatibility
+                        voiceStates[voiceId] = PocketVoiceState(
+                            id = voiceId,
+                            displayName = voiceId.replace("_", " ").replaceFirstChar { it.uppercase() },
+                            latents = embeddings.first,
+                            numFrames = embeddings.second,
+                            isBundled = false
+                        )
+                        
+                        Log.i(TAG, "Loaded celebrity voice: $voiceId (${embeddings.second} frames)")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to load celebrity voice: ${wavFile.name}", e)
+                }
+            }
+        }
+        
+        Log.i(TAG, "Total loaded voices: ${voiceEmbeddings.size}")
+    }
+    
+    /**
+     * Load cached voice embedding from disk.
+     */
+    private fun loadCachedEmbedding(file: File): Pair<FloatArray, Int>? {
+        try {
+            val bytes = file.readBytes()
+            val buffer = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            
+            // Read numFrames (4 bytes)
+            val numFrames = buffer.int
+            
+            // Read embeddings
+            val embeddings = FloatArray(numFrames * EMBED_DIM)
+            for (i in embeddings.indices) {
+                embeddings[i] = buffer.float
+            }
+            
+            return Pair(embeddings, numFrames)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading cached embedding", e)
+            return null
+        }
+    }
+    
+    /**
+     * Save voice embedding to disk cache.
+     */
+    private fun saveCachedEmbedding(file: File, embeddings: FloatArray, numFrames: Int) {
+        try {
+            val buffer = java.nio.ByteBuffer.allocate(4 + embeddings.size * 4)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            
+            buffer.putInt(numFrames)
+            for (f in embeddings) {
+                buffer.putFloat(f)
+            }
+            
+            file.writeBytes(buffer.array())
+            Log.d(TAG, "Saved voice cache: ${file.name} (${file.length() / 1024}KB)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving cached embedding", e)
+        }
+    }
+    
+    /**
+     * Encode a WAV file to voice embeddings using mimi_encoder.
+     * Returns Pair<embeddings[N*1024], numFrames> or null on failure.
+     * 
+     * Includes audio preprocessing for better voice cloning:
+     * - Silence trimming (VAD-like)
+     * - Peak normalization
+     * - High-pass filter (removes low-frequency rumble)
+     */
+    private fun encodeVoiceFromWav(wavFile: File, encoder: OrtSession): Pair<FloatArray, Int>? {
+        try {
+            // Load WAV audio samples
+            val rawSamples = loadAudioFile(wavFile)
+            if (rawSamples == null || rawSamples.isEmpty()) {
+                Log.e(TAG, "Failed to load audio from ${wavFile.name}")
+                return null
+            }
+            
+            Log.d(TAG, "Loaded ${rawSamples.size} samples from ${wavFile.name}")
+            
+            // PREPROCESSING PIPELINE for better voice cloning
+            // NOTE: GTCRN neural denoising DISABLED - causes voice distortion (female voices sound male)
+            // The GTCRN model may not be suitable for voice cloning preprocessing
+            // Using raw audio with basic cleanup only
+            val denoised = rawSamples
+            
+            // Step 1: High-pass filter to remove rumble (>80Hz)
+            val filtered = applyHighPassFilter(denoised, 80.0f, SAMPLE_RATE)
+            Log.d(TAG, "Applied high-pass filter (80Hz)")
+            
+            // Step 2: Trim silence from beginning and end
+            val trimmed = trimSilence(filtered, silenceThreshold = 0.02f)
+            Log.d(TAG, "Trimmed silence: ${denoised.size} -> ${trimmed.size} samples")
+            
+            // Step 3: Peak normalize to [-1, 1]
+            val normalized = peakNormalize(trimmed)
+            Log.d(TAG, "Peak normalized audio")
+            
+            // Use FIRST 30 seconds (720000 samples at 24kHz) for voice capture
+            // More audio = better voice characterization, but too much can cause OOM
+            val maxSamples = 30 * SAMPLE_RATE // 720000 samples = 30 seconds
+            val truncatedSamples = if (normalized.size > maxSamples) {
+                Log.d(TAG, "Truncating ${normalized.size} samples to $maxSamples (30 seconds)")
+                normalized.copyOfRange(0, maxSamples)
+            } else {
+                normalized
+            }
+            
+            // Prepare input tensor: [1, 1, numSamples]
+            val inputShape = longArrayOf(1, 1, truncatedSamples.size.toLong())
+            val inputTensor = OnnxTensor.createTensor(
+                ortEnv!!,
+                java.nio.FloatBuffer.wrap(truncatedSamples),
+                inputShape
+            )
+            
+            // Run mimi_encoder
+            val outputs = encoder.run(mapOf("audio" to inputTensor))
+            val outputTensor = outputs[0].value as Array<*>
+            
+            // Output shape is [1, N, 1024]
+            @Suppress("UNCHECKED_CAST")
+            val output3d = outputTensor as Array<Array<FloatArray>>
+            val numFrames = output3d[0].size
+            
+            // Flatten to [N * 1024]
+            val flattened = FloatArray(numFrames * EMBED_DIM)
+            for (i in 0 until numFrames) {
+                System.arraycopy(output3d[0][i], 0, flattened, i * EMBED_DIM, EMBED_DIM)
+            }
+            
+            inputTensor.close()
+            outputs.close()
+            
+            return Pair(flattened, numFrames)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error encoding voice from WAV", e)
+            return null
+        }
+    }
+    
+    /**
+     * Apply a simple first-order high-pass filter to remove low-frequency rumble.
+     */
+    private fun applyHighPassFilter(samples: FloatArray, cutoffHz: Float, sampleRate: Int): FloatArray {
+        if (samples.isEmpty()) return samples
+        
+        // RC high-pass filter: y[n] = alpha * (y[n-1] + x[n] - x[n-1])
+        val rc = 1.0f / (2.0f * Math.PI.toFloat() * cutoffHz)
+        val dt = 1.0f / sampleRate
+        val alpha = rc / (rc + dt)
+        
+        val output = FloatArray(samples.size)
+        output[0] = samples[0]
+        
+        for (i in 1 until samples.size) {
+            output[i] = alpha * (output[i - 1] + samples[i] - samples[i - 1])
+        }
+        
+        return output
+    }
+    
+    /**
+     * Trim silence from the beginning and end of the audio.
+     * Uses a simple energy threshold for detection.
+     */
+    private fun trimSilence(samples: FloatArray, silenceThreshold: Float = 0.02f): FloatArray {
+        if (samples.isEmpty()) return samples
+        
+        // Use a window-based approach for more robust detection
+        val windowSize = SAMPLE_RATE / 50 // 20ms windows
+        
+        // Find first non-silent sample
+        var startIdx = 0
+        for (i in 0 until samples.size - windowSize step windowSize) {
+            var rms = 0.0f
+            for (j in i until minOf(i + windowSize, samples.size)) {
+                rms += samples[j] * samples[j]
+            }
+            rms = kotlin.math.sqrt(rms / windowSize)
+            
+            if (rms > silenceThreshold) {
+                // Back up a bit to include attack
+                startIdx = maxOf(0, i - windowSize * 2)
+                break
+            }
+        }
+        
+        // Find last non-silent sample
+        var endIdx = samples.size
+        for (i in samples.size - 1 downTo windowSize step windowSize) {
+            var rms = 0.0f
+            for (j in maxOf(0, i - windowSize) until i) {
+                rms += samples[j] * samples[j]
+            }
+            rms = kotlin.math.sqrt(rms / windowSize)
+            
+            if (rms > silenceThreshold) {
+                // Add a bit more to include decay
+                endIdx = minOf(samples.size, i + windowSize * 2)
+                break
+            }
+        }
+        
+        return if (endIdx > startIdx) {
+            samples.copyOfRange(startIdx, endIdx)
+        } else {
+            samples // Don't modify if detection failed
+        }
+    }
+    
+    /**
+     * Peak normalize audio to [-1, 1] range.
+     */
+    private fun peakNormalize(samples: FloatArray): FloatArray {
+        if (samples.isEmpty()) return samples
+        
+        var maxAbs = 0.0f
+        for (sample in samples) {
+            val abs = kotlin.math.abs(sample)
+            if (abs > maxAbs) maxAbs = abs
+        }
+        
+        if (maxAbs < 0.001f) return samples // Avoid division by near-zero
+        
+        val scale = 0.95f / maxAbs // Normalize to 95% of full scale
+        return FloatArray(samples.size) { samples[it] * scale }
+    }
+    
+    /**
+     * Resample audio from one sample rate to another using linear interpolation.
+     * Simple but effective for 24kHz <-> 16kHz conversion.
+     */
+    private fun resample(samples: FloatArray, fromRate: Int, toRate: Int): FloatArray {
+        if (fromRate == toRate) return samples
+        if (samples.isEmpty()) return samples
+        
+        val ratio = fromRate.toDouble() / toRate
+        val outputLength = (samples.size / ratio).toInt()
+        val output = FloatArray(outputLength)
+        
+        for (i in 0 until outputLength) {
+            val srcPos = i * ratio
+            val srcIdx = srcPos.toInt()
+            val frac = (srcPos - srcIdx).toFloat()
+            
+            val sample1 = samples[srcIdx]
+            val sample2 = if (srcIdx + 1 < samples.size) samples[srcIdx + 1] else sample1
+            
+            output[i] = sample1 * (1 - frac) + sample2 * frac
+        }
+        
+        return output
+    }
+    
+    /**
+     * Load a WAV file and return audio samples as FloatArray at 24kHz mono, normalized to [-1, 1].
+     * 
+     * Reference: KevinAHM/pocket-tts-onnx _load_audio()
+     * - Convert to mono (average channels if stereo)
+     * - Resample to 24kHz
+     * - Normalize to [-1, 1] range
+     */
+    private fun loadAudioFile(file: File): FloatArray? {
+        try {
+            val inputStream = java.io.FileInputStream(file)
+            val audioBytes = inputStream.readBytes()
+            inputStream.close()
+            
+            // Parse WAV header and extract raw PCM samples
+            // WAV format: RIFF header (44 bytes minimum) + data
+            if (audioBytes.size < 44) {
+                Log.e(TAG, "WAV file too small: ${audioBytes.size} bytes")
+                return null
+            }
+            
+            // Read sample rate from WAV header (bytes 24-27)
+            val sampleRate = (audioBytes[24].toInt() and 0xFF) or
+                           ((audioBytes[25].toInt() and 0xFF) shl 8) or
+                           ((audioBytes[26].toInt() and 0xFF) shl 16) or
+                           ((audioBytes[27].toInt() and 0xFF) shl 24)
+            
+            // Read bits per sample (bytes 34-35)
+            val bitsPerSample = (audioBytes[34].toInt() and 0xFF) or
+                               ((audioBytes[35].toInt() and 0xFF) shl 8)
+            
+            // Read number of channels (bytes 22-23)
+            val numChannels = (audioBytes[22].toInt() and 0xFF) or
+                             ((audioBytes[23].toInt() and 0xFF) shl 8)
+            
+            Log.d(TAG, "WAV: $sampleRate Hz, $bitsPerSample bits, $numChannels channels")
+            
+            // Find data chunk
+            val dataOffset = 44
+            val dataSize = audioBytes.size - 44
+            
+            // Extract PCM samples
+            val bytesPerSample = bitsPerSample / 8
+            val numSamplesPerChannel = dataSize / (bytesPerSample * numChannels)
+            
+            // Process samples - convert stereo to mono if needed
+            var samples = FloatArray(numSamplesPerChannel)
+            
+            for (i in 0 until numSamplesPerChannel) {
+                val baseOffset = dataOffset + i * bytesPerSample * numChannels
+                if (baseOffset + bytesPerSample * numChannels > audioBytes.size) break
+                
+                if (numChannels == 1) {
+                    // Mono: just read the sample
+                    samples[i] = readPcmSample(audioBytes, baseOffset, bitsPerSample)
+                } else {
+                    // Stereo or multi-channel: average all channels (reference uses mean)
+                    var sum = 0f
+                    for (ch in 0 until numChannels) {
+                        val offset = baseOffset + ch * bytesPerSample
+                        sum += readPcmSample(audioBytes, offset, bitsPerSample)
+                    }
+                    samples[i] = sum / numChannels
+                }
+            }
+            
+            // Resample to 24kHz if needed
+            if (sampleRate != SAMPLE_RATE) {
+                samples = resampleAudio(samples, sampleRate, SAMPLE_RATE)
+            }
+            
+            // Normalize to [-1, 1] range if max amplitude exceeds 1.0
+            // Reference: if np.abs(audio).max() > 1.0: audio = audio / np.abs(audio).max()
+            val maxAbs = samples.maxOfOrNull { kotlin.math.abs(it) } ?: 1f
+            if (maxAbs > 1.0f) {
+                Log.d(TAG, "Normalizing audio (max abs = $maxAbs)")
+                for (i in samples.indices) {
+                    samples[i] = samples[i] / maxAbs
+                }
+            }
+            
+            return samples
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading audio file", e)
+            return null
+        }
+    }
+    
+    /**
+     * Read a single PCM sample from audio bytes.
+     */
+    private fun readPcmSample(audioBytes: ByteArray, offset: Int, bitsPerSample: Int): Float {
+        return when (bitsPerSample) {
+            16 -> {
+                val low = audioBytes[offset].toInt() and 0xFF
+                val high = audioBytes[offset + 1].toInt()
+                ((high shl 8) or low).toShort().toFloat() / 32768f
+            }
+            24 -> {
+                val b0 = audioBytes[offset].toInt() and 0xFF
+                val b1 = audioBytes[offset + 1].toInt() and 0xFF
+                val b2 = audioBytes[offset + 2].toInt()
+                val sample = (b2 shl 16) or (b1 shl 8) or b0
+                sample.toFloat() / 8388608f // 2^23
+            }
+            32 -> {
+                // 32-bit float
+                val bits = (audioBytes[offset].toInt() and 0xFF) or
+                          ((audioBytes[offset + 1].toInt() and 0xFF) shl 8) or
+                          ((audioBytes[offset + 2].toInt() and 0xFF) shl 16) or
+                          ((audioBytes[offset + 3].toInt() and 0xFF) shl 24)
+                java.lang.Float.intBitsToFloat(bits)
+            }
+            else -> {
+                // 8-bit PCM (unsigned)
+                (audioBytes[offset].toInt() - 128) / 128f
+            }
+        }
+    }
+    
+    /**
+     * Simple linear interpolation resampling.
+     */
+    private fun resampleAudio(samples: FloatArray, srcRate: Int, dstRate: Int): FloatArray {
+        val ratio = srcRate.toFloat() / dstRate
+        val dstSize = (samples.size / ratio).toInt()
+        val result = FloatArray(dstSize)
+        
+        for (i in 0 until dstSize) {
+            val srcPos = i * ratio
+            val srcIdx = srcPos.toInt()
+            val frac = srcPos - srcIdx
+            
+            result[i] = if (srcIdx + 1 < samples.size) {
+                samples[srcIdx] * (1 - frac) + samples[srcIdx + 1] * frac
+            } else {
+                samples[srcIdx.coerceIn(0, samples.size - 1)]
+            }
+        }
+        
+        return result
+    }
+    
+    private fun loadClonedVoices() {
+        val voicesDir = File(context.filesDir, CLONED_VOICES_DIR)
+        if (!voicesDir.exists()) {
+            voicesDir.mkdirs()
+            return
+        }
+        
+        voicesDir.listFiles()?.filter { it.extension == "bin" }?.forEach { file ->
+            try {
+                val state = PocketVoiceState.fromBytes(file.readBytes())
+                voiceStates[state.id] = state
+                Log.d(TAG, "Loaded cloned voice: ${state.id}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load cloned voice: ${file.name}", e)
+            }
+        }
+    }
+    
+    override suspend fun generate(
+        text: String,
+        speed: Float,
+        voice: String?,
+        callback: (FloatArray) -> Unit
+    ): Unit = withContext(Dispatchers.Default) {
+        // Check if engine was released (concurrent stop/restart scenario)
+        if (isReleased || !initialized) {
+            Log.w(TAG, "Generate called but engine is released or not initialized")
+            return@withContext
+        }
+        
+        val session = flowLmMain ?: run {
+            Log.w(TAG, "Generate called but flowLmMain is null")
+            return@withContext
+        }
+        val flowSession = flowLmFlow ?: run {
+            Log.w(TAG, "Generate called but flowLmFlow is null")
+            return@withContext
+        }
+        val conditioner = textConditioner ?: run {
+            Log.w(TAG, "Generate called but textConditioner is null")
+            return@withContext
+        }
+        val codec = mimiCodec ?: run {
+            Log.w(TAG, "Generate called but mimiCodec is null")
+            return@withContext
+        }
+        val tok = tokenizer ?: run {
+            Log.w(TAG, "Generate called but tokenizer is null")
+            return@withContext
+        }
+        
+        val voiceName = voice ?: currentVoice
+        val voiceState = voiceStates[voiceName] ?: run {
+            Log.w(TAG, "Voice not found: $voiceName, falling back to alba")
+            voiceStates["alba"] ?: return@withContext
+        }
+        
+        Log.d(TAG, "Generating speech for: '${text.take(50)}...' with voice: $voiceName")
+        
+        try {
+            // Initialize decoder and flow LM state
+            codec.initDecoderState()
+            initFlowLmState()
+            
+            // Tokenize text
+            val tokens = tok.encode(text)
+            Log.d(TAG, "Tokenized to ${tokens.size} tokens")
+            
+            // Get text embeddings [numTokens, 1024]
+            val textEmbeddings = runTextConditioner(conditioner, tokens)
+            val numTextTokens = tokens.size
+            
+            // Voice embeddings from voice state [numFrames, 1024]
+            val voiceEmbeddings = voiceState.latents
+            val numVoiceFrames = voiceState.numFrames
+            
+            // Empty tensors for conditioning passes
+            val emptySeq = FloatArray(0) // [1, 0, 32]
+            val emptyText = FloatArray(0) // [1, 0, 1024]
+            
+            // PASS 1: Voice conditioning - empty sequence, voice embeddings
+            Log.d(TAG, "Pass 1: Voice conditioning ($numVoiceFrames frames)")
+            runFlowLmMainPass(session, emptySeq, 0, voiceEmbeddings, numVoiceFrames)
+            
+            // PASS 2: Text conditioning - empty sequence, text embeddings
+            Log.d(TAG, "Pass 2: Text conditioning ($numTextTokens tokens)")
+            runFlowLmMainPass(session, emptySeq, 0, textEmbeddings, numTextTokens)
+            
+            // PASS 3: Autoregressive generation loop
+            Log.d(TAG, "Pass 3: Autoregressive generation")
+            var generatedFrames = 0
+            val maxFrames = 500 // Safety limit
+            var eosStep: Int? = null
+            
+            // Use PrefsManager settings instead of hardcoded values
+            val framesAfterEos = prefs.pocketFramesAfterEos
+            val lsdSteps = prefs.pocketLsdSteps.coerceIn(1, 50)
+            val temperature = prefs.pocketTemperature.coerceIn(0f, 2f)
+            val decodingMode = prefs.pocketDecodingMode
+            val decodeChunkSize = prefs.pocketDecodeChunkSize.coerceIn(1, 50)
+            
+            Log.d(TAG, "Generation params: lsdSteps=$lsdSteps, temp=$temperature, framesAfterEos=$framesAfterEos, mode=$decodingMode")
+            
+            // Streaming mode parameters (following KevinAHM reference)
+            val FIRST_CHUNK_FRAMES = 2    // Small first chunk for low TTFB
+            val MAX_CHUNK_FRAMES = 15     // Larger chunks for throughput
+            
+            val allLatents = mutableListOf<FloatArray>()
+            var currentLatent = FloatArray(LATENT_DIM) { Float.NaN }
+            var decodedFrames = 0
+            
+            // For STREAMING mode: Initialize decoder state now so we can decode progressively
+            // For BATCH mode: We'll initialize later, right before decoding
+            if (decodingMode == "streaming") {
+                codec.initDecoderState()
+            }
+            
+            while (generatedFrames < maxFrames && isActive) {
+                // Run flow_lm_main with current latent and empty text
+                val (conditioning, eosLogit) = runFlowLmMainPass(
+                    session,
+                    currentLatent,
+                    1,
+                    emptyText,
+                    0
+                )
+                
+                // Check for EOS
+                if (eosLogit > -4.0f && eosStep == null) {
+                    eosStep = generatedFrames
+                    Log.d(TAG, "EOS detected at frame $generatedFrames")
+                }
+                
+                // Stop after frames_after_eos additional frames
+                val currentEosStep = eosStep
+                if (currentEosStep != null && generatedFrames >= currentEosStep + framesAfterEos) {
+                    Log.d(TAG, "Stopping after EOS + $framesAfterEos frames")
+                    break
+                }
+                
+                // Flow matching with Euler integration
+                val latent = runFlowMatching(flowSession, conditioning, lsdSteps, temperature)
+                
+                // Collect latent
+                allLatents.add(latent)
+                generatedFrames++
+                currentLatent = latent
+                
+                // STREAMING MODE: Decode progressively with adaptive chunking
+                if (decodingMode == "streaming") {
+                    val pending = allLatents.size - decodedFrames
+                    var chunkSize = 0
+                    
+                    if (decodedFrames == 0) {
+                        // First chunk - minimize Time To First Byte (TTFB)
+                        if (pending >= FIRST_CHUNK_FRAMES) {
+                            chunkSize = FIRST_CHUNK_FRAMES
+                        }
+                    } else {
+                        // Subsequent chunks - use larger chunks for efficiency
+                        if (pending >= MAX_CHUNK_FRAMES) {
+                            chunkSize = MAX_CHUNK_FRAMES
+                        }
+                    }
+                    
+                    // Decode chunk if ready
+                    if (chunkSize > 0) {
+                        val chunkLatents = FloatArray(chunkSize * LATENT_DIM)
+                        for (j in 0 until chunkSize) {
+                            System.arraycopy(allLatents[decodedFrames + j], 0, chunkLatents, j * LATENT_DIM, LATENT_DIM)
+                        }
+                        
+                        val audio = codec.decode(chunkLatents, chunkSize)
+                        if (audio.isNotEmpty()) {
+                            callback(audio)
+                        }
+                        decodedFrames += chunkSize
+                    }
+                }
+            }
+            
+            Log.d(TAG, "Generated $generatedFrames frames total")
+            
+            // Decode remaining latents (or all in batch mode)
+            if (decodingMode == "batch") {
+                // BATCH MODE: Decode all latents at once with chunked processing
+                Log.d(TAG, "Batch mode: Decoding all $generatedFrames frames...")
+                
+                // Initialize decoder state fresh for batch decode
+                codec.initDecoderState()
+                
+                for (i in allLatents.indices step decodeChunkSize) {
+                    val endIdx = minOf(i + decodeChunkSize, allLatents.size)
+                    val chunkSize = endIdx - i
+                    
+                    val chunkLatents = FloatArray(chunkSize * LATENT_DIM)
+                    for (j in 0 until chunkSize) {
+                        System.arraycopy(allLatents[i + j], 0, chunkLatents, j * LATENT_DIM, LATENT_DIM)
+                    }
+                    
+                    val audio = codec.decode(chunkLatents, chunkSize)
+                    if (audio.isNotEmpty()) {
+                        callback(audio)
+                    }
+                }
+            } else {
+                // STREAMING MODE: Decode any remaining latents
+                if (decodedFrames < allLatents.size) {
+                    val remaining = allLatents.size - decodedFrames
+                    Log.d(TAG, "Streaming mode: Decoding remaining $remaining frames...")
+                    
+                    val chunkLatents = FloatArray(remaining * LATENT_DIM)
+                    for (j in 0 until remaining) {
+                        System.arraycopy(allLatents[decodedFrames + j], 0, chunkLatents, j * LATENT_DIM, LATENT_DIM)
+                    }
+                    
+                    val audio = codec.decode(chunkLatents, remaining)
+                    if (audio.isNotEmpty()) {
+                        callback(audio)
+                    }
+                }
+            }
+            
+            Log.d(TAG, "Decoding complete")
+            
+        } finally {
+            codec.resetDecoderState()
+            resetFlowLmState()
+        }
+    }
+    
+    private fun runTextConditioner(session: OrtSession, tokens: LongArray): FloatArray {
+        val tokensTensor = OnnxTensor.createTensor(
+            ortEnv!!,
+            LongBuffer.wrap(tokens),
+            longArrayOf(1, tokens.size.toLong())
+        )
+        
+        val outputs = session.run(mapOf("token_ids" to tokensTensor))
+        val embeddingsTensor = outputs[0] as OnnxTensor
+        
+        val embeddings = embeddingsTensor.floatBuffer.let { buf ->
+            FloatArray(buf.remaining()).also { buf.get(it) }
+        }
+        
+        tokensTensor.close()
+        outputs.close()
+        
+        return embeddings
+    }
+    
+    /**
+     * Run flow_lm_main for a single pass (voice conditioning, text conditioning, or generation).
+     * 
+     * @param session The flow_lm_main ONNX session
+     * @param sequence Latent sequence [numFrames, 32], empty for conditioning passes
+     * @param numSeqFrames Number of frames in sequence (0 for empty)
+     * @param embeddings Text/voice embeddings [numTokens, 1024]
+     * @param numEmbeddings Number of embedding tokens
+     * @return Pair of (conditioning [1024], eos_logit)
+     */
+    private fun runFlowLmMainPass(
+        session: OrtSession,
+        sequence: FloatArray,
+        numSeqFrames: Int,
+        embeddings: FloatArray,
+        numEmbeddings: Int
+    ): Pair<FloatArray, Float> {
+        val inputs = mutableMapOf<String, OnnxTensor>()
+        
+        // Sequence input: [1, T, 32] - latent frames
+        inputs["sequence"] = OnnxTensor.createTensor(
+            ortEnv!!,
+            FloatBuffer.wrap(sequence),
+            longArrayOf(1, numSeqFrames.toLong(), LATENT_DIM.toLong())
+        )
+        
+        // Text embeddings: [1, T, 1024] - voice or text embeddings
+        inputs["text_embeddings"] = OnnxTensor.createTensor(
+            ortEnv!!,
+            FloatBuffer.wrap(embeddings),
+            longArrayOf(1, numEmbeddings.toLong(), EMBED_DIM.toLong())
+        )
+        
+        // Add state inputs
+        flowLmState?.forEach { (name, typeAndData) ->
+            val (type, data) = typeAndData
+            val stateInfo = session.inputInfo[name]?.info as? ai.onnxruntime.TensorInfo
+            stateInfo?.let { info ->
+                inputs[name] = when {
+                    type.contains("int64", ignoreCase = true) || type.contains("INT64") -> OnnxTensor.createTensor(
+                        ortEnv!!,
+                        java.nio.LongBuffer.wrap(data as LongArray),
+                        info.shape
+                    )
+                    else -> OnnxTensor.createTensor(
+                        ortEnv!!,
+                        FloatBuffer.wrap(data as FloatArray),
+                        info.shape
+                    )
+                }
+            }
+        }
+        
+        val outputs = session.run(inputs)
+        
+        // Get conditioning [1, 1, dim] -> [dim]
+        val conditioningResult = outputs.get("conditioning")
+        val conditioningTensor = conditioningResult?.get() as? OnnxTensor
+        val conditioning = conditioningTensor?.floatBuffer?.let { buf ->
+            FloatArray(buf.remaining()).also { buf.get(it) }
+        } ?: FloatArray(EMBED_DIM)
+        
+        // Get EOS logit [1, 1]
+        val eosLogitResult = outputs.get("eos_logit")
+        val eosLogitTensor = eosLogitResult?.get() as? OnnxTensor
+        val eosLogit = eosLogitTensor?.floatBuffer?.get() ?: -10f
+        
+        // Update state from outputs (critical for proper generation)
+        // Reference impl: for i in range(2, len(outputs)): if out_state_N -> state_N
+        // FlowLM has: [0]=conditioning, [1]=eos_logit, [2+]=states
+        val outputList = session.outputNames.toList()
+        for (i in 2 until outputList.size) {
+            val outName = outputList[i]
+            if (outName.startsWith("out_state_")) {
+                val stateIdx = outName.removePrefix("out_state_").toIntOrNull() ?: continue
+                val stateName = "state_$stateIdx"
+                val typeAndData = flowLmState?.get(stateName) ?: continue
+                
+                val stateResult = outputs.get(outName)
+                val stateTensor = stateResult?.get() as? OnnxTensor ?: continue
+                
+                val newData: Any = when {
+                    typeAndData.first.contains("int64", ignoreCase = true) -> {
+                        val buf = stateTensor.longBuffer
+                        LongArray(buf.remaining()).also { buf.get(it) }
+                    }
+                    else -> {
+                        val buf = stateTensor.floatBuffer
+                        FloatArray(buf.remaining()).also { buf.get(it) }
+                    }
+                }
+                flowLmState!![stateName] = Pair(typeAndData.first, newData)
+            }
+        }
+        
+        // Cleanup
+        inputs.values.forEach { (it as OnnxTensor).close() }
+        outputs.close()
+        
+        return Pair(conditioning, eosLogit)
+    }
+    
+    /**
+     * Run flow matching (Euler integration) to generate a latent frame.
+     * 
+     * @param session The flow_lm_flow ONNX session
+     * @param conditioning Conditioning vector [1024] from flow_lm_main
+     * @param steps Number of Euler integration steps
+     * @param temperature Sampling temperature (0 = deterministic)
+     * @return Latent frame [32]
+     */
+    private fun runFlowMatching(
+        session: OrtSession,
+        conditioning: FloatArray,
+        steps: Int,
+        temperature: Float
+    ): FloatArray {
+        val dt = 1.0f / steps
+        
+        // Initialize x with temperature-scaled noise
+        val std = kotlin.math.sqrt(temperature)
+        var x = if (temperature > 0) {
+            FloatArray(LATENT_DIM) { (java.util.Random().nextGaussian() * std).toFloat() }
+        } else {
+            FloatArray(LATENT_DIM) { 0f }
+        }
+        
+        // Euler integration over flow network
+        for (j in 0 until steps) {
+            val s = j.toFloat() / steps
+            val t = s + dt
+            
+            val inputs = mapOf(
+                "c" to OnnxTensor.createTensor(
+                    ortEnv!!,
+                    FloatBuffer.wrap(conditioning),
+                    longArrayOf(1, EMBED_DIM.toLong())
+                ),
+                "s" to OnnxTensor.createTensor(
+                    ortEnv!!,
+                    FloatBuffer.wrap(floatArrayOf(s)),
+                    longArrayOf(1, 1)
+                ),
+                "t" to OnnxTensor.createTensor(
+                    ortEnv!!,
+                    FloatBuffer.wrap(floatArrayOf(t)),
+                    longArrayOf(1, 1)
+                ),
+                "x" to OnnxTensor.createTensor(
+                    ortEnv!!,
+                    FloatBuffer.wrap(x),
+                    longArrayOf(1, LATENT_DIM.toLong())
+                )
+            )
+            
+            val outputs = session.run(inputs)
+            val flowOutput = (outputs[0] as OnnxTensor).floatBuffer.let { buf ->
+                FloatArray(buf.remaining()).also { buf.get(it) }
+            }
+            
+            // Euler step: x = x + flow_output * dt
+            for (i in x.indices) {
+                x[i] = x[i] + flowOutput[i] * dt
+            }
+            
+            inputs.values.forEach { (it as OnnxTensor).close() }
+            outputs.close()
+        }
+        
+        return x
+    }
+    
+    private fun initFlowLmState() {
+        val session = flowLmMain ?: return
+        
+        val stateMap = mutableMapOf<String, Pair<String, Any>>()
+        
+        session.inputInfo.forEach { (name, info) ->
+            if (name.startsWith("state_")) {
+                val tensorInfo = info.info as? ai.onnxruntime.TensorInfo ?: return@forEach
+                val shape = tensorInfo.shape
+                val size = shape.fold(1L) { acc, dim -> acc * if (dim < 0) 0 else dim }.toInt().coerceAtLeast(0)
+                val type = tensorInfo.type.toString()
+                
+                Log.d(TAG, "State $name: type=$type, shape=${shape.contentToString()}, size=$size")
+                
+                val data: Any = when {
+                    type.contains("int64", ignoreCase = true) -> LongArray(size) { 0L }
+                    type.contains("bool", ignoreCase = true) -> LongArray(size) { 0L }
+                    else -> FloatArray(size) { 0f }
+                }
+                
+                stateMap[name] = Pair(type, data)
+            }
+        }
+        
+        Log.d(TAG, "Initialized ${stateMap.size} flow LM states")
+        flowLmState = stateMap
+    }
+    
+    private fun updateFlowLmState(latent: FloatArray) {
+        // State is updated in runFlowLmMain
+    }
+    
+    private fun resetFlowLmState() {
+        flowLmState = null
+    }
+    
+    /**
+     * Clone a voice from an audio file.
+     * 
+     * @param audioPath Path to the audio file (WAV, 24kHz recommended)
+     * @param voiceName Display name for the cloned voice
+     * @return ID of the cloned voice
+     */
+    override suspend fun cloneVoice(audioPath: String, voiceName: String): String? = withContext(Dispatchers.IO) {
+        val encoder = mimiEncoder ?: run {
+            Log.e(TAG, "Cannot clone voice - mimi_encoder not initialized")
+            return@withContext null
+        }
+        
+        Log.i(TAG, "Cloning voice from: $audioPath")
+        
+        // Load audio file
+        val audioFile = File(audioPath)
+        if (!audioFile.exists()) {
+            Log.e(TAG, "Audio file not found: $audioPath")
+            return@withContext null
+        }
+        
+        // Use the same encoding method as bundled/celebrity voices
+        // This uses mimi_encoder.onnx which produces 1024-dim embeddings
+        val embeddings = encodeVoiceFromWav(audioFile, encoder)
+        if (embeddings == null) {
+            Log.e(TAG, "Failed to encode voice from: $audioPath")
+            return@withContext null
+        }
+        
+        val (latents, numFrames) = embeddings
+        
+        // Create voice state with consistent format
+        val voiceId = "cloned_${System.currentTimeMillis()}"
+        val voiceState = PocketVoiceState(
+            id = voiceId,
+            displayName = voiceName,
+            latents = latents,
+            numFrames = numFrames,
+            isBundled = false
+        )
+        
+        // Save to disk for persistence
+        val voicesDir = File(context.filesDir, CLONED_VOICES_DIR)
+        voicesDir.mkdirs()
+        File(voicesDir, "$voiceId.bin").writeBytes(voiceState.toBytes())
+        
+        // Also cache the embeddings like we do for celebrity voices
+        val cacheDir = File(context.cacheDir, "pocket")
+        cacheDir.mkdirs()
+        saveCachedEmbedding(File(cacheDir, "$voiceId.emb"), latents, numFrames)
+        
+        // Add to runtime cache
+        voiceStates[voiceId] = voiceState
+        
+        Log.i(TAG, "Voice cloned successfully: $voiceName (ID: $voiceId, $numFrames frames)")
+        
+        voiceId
+    }
+    
+    private fun loadAudioFromWav(file: File): FloatArray {
+        // Simple WAV parser for 16-bit PCM mono
+        val bytes = file.readBytes()
+        
+        // Skip WAV header (44 bytes for standard WAV)
+        val dataStart = 44
+        val numSamples = (bytes.size - dataStart) / 2
+        
+        val audio = FloatArray(numSamples)
+        val buffer = java.nio.ByteBuffer.wrap(bytes, dataStart, bytes.size - dataStart)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        
+        for (i in 0 until numSamples) {
+            val sample = buffer.short
+            audio[i] = sample.toFloat() / 32768f
+        }
+        
+        return audio
+    }
+    
+    /**
+     * Delete a cloned voice.
+     */
+    override fun deleteClonedVoice(voiceId: String): Boolean {
+        val voiceState = voiceStates[voiceId] ?: return false
+        if (voiceState.isBundled) {
+            Log.w(TAG, "Cannot delete bundled voice: $voiceId")
+            return false
+        }
+        
+        val voiceFile = File(context.filesDir, "$CLONED_VOICES_DIR/$voiceId.bin")
+        if (voiceFile.exists()) {
+            voiceFile.delete()
+        }
+        
+        voiceStates.remove(voiceId)
+        Log.i(TAG, "Deleted cloned voice: $voiceId")
+        return true
+    }
+    
+    override fun getSampleRate(): Int = SAMPLE_RATE
+    
+    override fun getVoices(): List<String> = voiceStates.keys.toList()
+    
+    fun getVoiceStates(): Map<String, PocketVoiceState> = voiceStates.toMap()
+    
+    override fun release() {
+        isReleased = true
+        mimiEncoder?.close()
+        textConditioner?.close()
+        flowLmMain?.close()
+        flowLmFlow?.close()
+        mimiDecoder?.close()
+        ortEnv?.close()
+        
+        mimiCodec?.release()
+        gtcrnDenoiser?.close()
+        
+        mimiEncoder = null
+        textConditioner = null
+        flowLmMain = null
+        flowLmFlow = null
+        mimiDecoder = null
+        ortEnv = null
+        mimiCodec = null
+        odeSolver = null
+        
+        initialized = false
+        Log.i(TAG, "Pocket-TTS Engine released")
+    }
+    
+    override fun isInitialized(): Boolean = initialized
+    
+    // Voice cloning support
+    override fun supportsVoiceCloning(): Boolean = true
+}

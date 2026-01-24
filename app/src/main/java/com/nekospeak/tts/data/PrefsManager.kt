@@ -45,4 +45,27 @@ class PrefsManager(context: Context) {
     var theme: String
         get() = prefs.getString(KEY_THEME, "system") ?: "system"
         set(value) = prefs.edit().putString(KEY_THEME, value).apply()
+    
+    // Pocket-TTS specific settings (from KevinAHM reference)
+    var pocketTemperature: Float
+        get() = prefs.getFloat("pocket_temperature", 0.7f)
+        set(value) = prefs.edit().putFloat("pocket_temperature", value).apply()
+    
+    var pocketLsdSteps: Int
+        get() = prefs.getInt("pocket_lsd_steps", 10)
+        set(value) = prefs.edit().putInt("pocket_lsd_steps", value).apply()
+    
+    var pocketFramesAfterEos: Int
+        get() = prefs.getInt("pocket_frames_after_eos", 3)
+        set(value) = prefs.edit().putInt("pocket_frames_after_eos", value).apply()
+    
+    // Decoding mode: "batch" (collect-then-decode, higher quality) or "streaming" (adaptive chunking, lower latency)
+    var pocketDecodingMode: String
+        get() = prefs.getString("pocket_decoding_mode", "batch") ?: "batch"
+        set(value) = prefs.edit().putString("pocket_decoding_mode", value).apply()
+    
+    // Chunk size for batch decoding (default 15 frames per reference)
+    var pocketDecodeChunkSize: Int
+        get() = prefs.getInt("pocket_decode_chunk_size", 15)
+        set(value) = prefs.edit().putInt("pocket_decode_chunk_size", value).apply()
 }

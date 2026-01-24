@@ -1,28 +1,52 @@
 # NekoSpeak
 
 ![Android](https://img.shields.io/badge/Android-35-green?style=flat&logo=android)
-![Kotlin](https://img.shields.io/badge/Kotlin-1.9.0-purple?style=flat&logo=kotlin)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.0.0-purple?style=flat&logo=kotlin)
 [![GitHub Release](https://img.shields.io/github/v/release/siva-sub/NekoSpeak)](https://github.com/siva-sub/NekoSpeak/releases)
 [![License](https://img.shields.io/github/license/siva-sub/NekoSpeak)](https://github.com/siva-sub/NekoSpeak/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/siva-sub/NekoSpeak?style=social)](https://github.com/siva-sub/NekoSpeak/stargazers)
 ![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.18.0-blue)
 ![CPU](https://img.shields.io/badge/CPU-supported-brightgreen)
-[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.0.10)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
+[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.1.0)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
 
-**NekoSpeak** is a high-performance, on-device Text-to-Speech (TTS) engine for Android, capable of running offline with low latency. It bridges the gap between modern AI voice synthesis and the standard Android TTS API.
+**NekoSpeak** is a high-performance, on-device Text-to-Speech (TTS) engine for Android, capable of running **100% offline** with low latency. It bridges the gap between modern AI voice synthesis and the standard Android TTS API.
 
-## � Features
+## 🎯 Motivation
 
-*   **Triple Engine Support**:
-    *   **Kokoro v1.0 (82M)**: State-of-the-art expressive narration. Best for audiobooks and reading.
+This project was born from two key inspirations:
+
+1. **Accessibility and Custom Voices** - While watching **Ahren Belisle**, a non-verbal stand-up comedian with cerebral palsy who uses a text-to-speech app on his phone to deliver his comedy routines, I was struck by how powerful TTS technology can be as a voice for those who need it. It made me wonder about custom voices and how high-quality, expressive TTS could be a life-changing quality-of-life improvement for many people.
+
+2. **Natural Audiobook Reading** - I wanted to read books from my **MoonReader** app and have them sound somewhat natural without relying on cloud-based services.
+
+The first and foremost consideration was **fully offline functionality** - no internet required, no data sent anywhere, complete privacy.
+
+> **Future Plans**: Newer models like **Qwen 3-TTS** are very promising, and I plan to experiment with quantized ONNX versions if they become available. The goal is always to maintain offline-first functionality.
+
+## ✨ Features
+
+*   **Multi-Engine Support**:
+    *   **Pocket-TTS** ⭐ **RECOMMENDED**: Zero-shot voice cloning with celebrity voices and custom voice enrollment. Best quality and most natural sounding!
     *   **Piper**: Fast, efficient, and multilingual. Supports hundreds of community voices (English, Tamil, Spanish, etc.).
-    *   **Kitten TTS Nano**: Extremely lightweight and fast. Ideal for older devices.
+*   **Voice Cloning**: Record your own voice or upload audio to create custom TTS voices (Pocket-TTS).
+*   **Celebrity Voices**: Download and use celebrity voice profiles (Oprah Winfrey, Greta Thunberg, Morgan Freeman, and more).
 *   **Privacy First**: All processing happens 100% on-device. No data is ever sent to the cloud.
 *   **System-Wide Integration**: Works with any Android app that supports TTS (MoonReader, @Voice, etc.).
 *   **Advanced Voice Management**:
     *   **Cloud Voice Store**: Browse and download hundreds of Piper voices directly within the app.
     *   **Quality Filters**: Filter voices by quality (x_low to high).
     *   **Persistence**: Remembers your preferred voice and speed settings.
+
+## 📦 Bundled Models
+
+> **Why only Amy Low?** We bundle only the **Piper Amy Low** voice (~63MB) instead of larger models like Kokoro (~115MB). Kitten TTS Nano (~23MB) is available but was removed from default bundling because despite being small, the audio quality wasn't satisfactory for most use cases. We recommend using **Pocket-TTS** for the best quality experience - download the model (~176MB) on first launch and enjoy superior voice synthesis with cloning support.
+
+| Engine | Model | Size | Quality | Notes |
+|--------|-------|------|---------|-------|
+| Piper | Amy Low | ~63MB | Good | Bundled for instant offline use |
+| Pocket-TTS | Full Model | ~176MB | Excellent | Downloaded on first use. **Recommended!** |
+| Kitten TTS | Nano | ~23MB | Fair | Available but not bundled by default |
+| Piper | Community Voices | Varies | Varies | 100+ downloadable voices |
 
 ## 📸 Screenshots
 
@@ -36,19 +60,19 @@
 
 ## 📥 Download
 
-**v1.0.10 is now available!**
+**v1.1.0 is now available!**
 
 > **Why is the APK size large?**
-> NekoSpeak comes pre-packaged with high-quality AI models (Kokoro-82M, Piper-Amy, Kitten-TTS-Nano) to ensure **100% offline functionality** right out of the box. No initial downloads required!
+> NekoSpeak comes pre-packaged with the Piper engine and Amy Low voice to ensure **100% offline functionality** right out of the box. The Pocket-TTS model is downloaded separately on first use.
 
-*   **Universal** (239 MB): Works on all devices.
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.10/app-universal-release.apk)
-*   **arm64-v8a** (191 MB): Optimized for modern devices (Pixel, Samsung S-series).
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.10/app-arm64-v8a-release.apk)
-*   **armeabi-v7a** (186 MB): Optimized for older/low-end devices.
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.0.10/app-armeabi-v7a-release.apk)
+*   **Universal** (~250 MB): Works on all devices.
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-universal-release.apk)
+*   **arm64-v8a** (~200 MB): Optimized for modern devices (Pixel, Samsung S-series).
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-arm64-v8a-release.apk)
+*   **armeabi-v7a** (~195 MB): Optimized for older/low-end devices.
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.1.0/app-armeabi-v7a-release.apk)
 
-[**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.0.10)
+[**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.1.0)
 
 ## 📂 Project Structure
 
@@ -86,10 +110,8 @@ We gratefully acknowledge the incredible work of the open-source AI community:
     *   Thanks to the Rhasspy team for the amazing Piper architecture and the massive collection of high-quality voices.
 *   **[Piper Tamil Voice (Valluvar)](https://huggingface.co/datasets/Jeyaram-K/piper-tamil-voice)**
     *   Special thanks to **Jeyaram-K** for training and providing the high-quality Tamil "Valluvar" model.
-*   **[Kokoro-ONNX](https://github.com/thewh1teagle/kokoro-onnx)**
-    *   Thanks to [thewh1teagle](https://github.com/thewh1teagle) for the inspiration and ONNX export work.
-*   **[KittenTTS](https://github.com/KittenML/KittenTTS)**
-    *   Thanks to the KittenML team for their work on efficient TTS architectures.
+*   **[Pocket-TTS-ONNX](https://huggingface.co/KevinAHM/pocket-tts-onnx)**
+    *   Thanks to **KevinAHM** for the excellent ONNX export and reference implementation.
 *   **[Misaki](https://github.com/hexgrad/misaki)**
     *   G2P logic ported from this excellent library.
 *   **[Espeak-NG](https://github.com/espeak-ng/espeak-ng)**

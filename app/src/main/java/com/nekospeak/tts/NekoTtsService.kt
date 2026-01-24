@@ -86,12 +86,7 @@ class NekoTtsService : TextToSpeechService() {
                 val prefs = com.nekospeak.tts.data.PrefsManager(applicationContext)
                 val modelType = prefs.currentModel
                 
-                val newEngine = if (modelType.startsWith("piper")) {
-                    val voiceId = modelType.removePrefix("piper_")
-                    com.nekospeak.tts.engine.piper.PiperEngine(applicationContext, voiceId)
-                } else {
-                    KokoroEngine(applicationContext)
-                }
+                val newEngine = com.nekospeak.tts.engine.EngineFactory.createEngine(applicationContext, modelType)
                 
                 Log.i(TAG, "Created ${newEngine::class.java.simpleName}. Initializing...")
                 
