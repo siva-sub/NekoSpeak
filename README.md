@@ -105,7 +105,7 @@ For a detailed architectural breakdown, component analysis, system integration d
 
 ## Credits & Acknowledgements
 
-We gratefully acknowledge the incredible work of the open-source AI community:
+I gratefully acknowledge the incredible work of the open-source AI community:
 
 *   **[Pocket-TTS (Original Model)](https://github.com/kyutai-labs/pocket-tts)**
     *   Thanks to **Kyutai Labs** for the original Pocket-TTS model and default voices.
