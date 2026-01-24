@@ -260,7 +260,6 @@ class NekoTtsService : TextToSpeechService() {
                     voice = voiceToUse
                 ) { samples ->
                     if (stopRequested) {
-                        Log.i(TAG, "[$reqId] Stop requested during generation")
                         return@generate
                     }
                     
@@ -284,11 +283,14 @@ class NekoTtsService : TextToSpeechService() {
                 }
             }
             
-            if (!stopRequested) {
-                callback.done()
-                Log.i(TAG, "[$reqId] Synthesis complete successfully")
+            // Always call done() to signal completion to the system
+            // This is critical - without it, system thinks we're still running
+            callback.done()
+            
+            if (stopRequested) {
+                Log.i(TAG, "[$reqId] Synthesis stopped by request")
             } else {
-                Log.i(TAG, "[$reqId] Synthesis stopped")
+                Log.i(TAG, "[$reqId] Synthesis complete successfully")
             }
             
         } catch (e: Exception) {
