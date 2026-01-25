@@ -49,6 +49,42 @@ FATAL: op_builder_helpers.cc:144 AddNnapiSplit count [0]
 
 **Result:** FP32 models load but NNAPI compilation fails due to unsupported ops.
 
+### FP32 Model Testing (Bypassing Quantization Ops)
+
+Since INT8 models use `DynamicQuantizeLinear` and `MatMulInteger` ops that NNAPI doesn't support, we tested FP32 (full precision) models from [KevinAHM/pocket-tts-onnx](https://huggingface.co/KevinAHM/pocket-tts-onnx/tree/main/onnx).
+
+#### FP32 Model Op Analysis
+
+| Model | Total Nodes | Quantization Ops | Key Ops |
+|-------|-------------|-----------------|---------|
+| flow_lm_main.onnx (FP32) | 2165 | ❌ None | MatMul, Add, Mul, Reshape, Gather |
+| flow_lm_flow.onnx (FP32) | ~500 | ❌ None | MatMul, Conv, Add |  
+| mimi_decoder.onnx (FP32) | ~300 | ❌ None | Conv, Add, Transpose |
+| kokoro_82m.onnx (FP32) | 2469 | ❌ None | MatMul, Gemm, Conv, LayerNorm |
+
+**Finding:** FP32 models have **no quantization ops** - they should theoretically be more NNAPI-friendly than INT8.
+
+#### FP32 Test Results
+
+```
+Model selection: NNAPI=true, using FP32 models ✓
+Loading model: flow_lm_main.onnx (288MB) ✓
+
+NnapiExecutionProvider::GetCapability
+- Nodes in graph: 1109
+- Nodes supported by NNAPI: 31 (2.8%)  ← Still very low!
+
+FATAL: model_builder.cc:511 Compile ResultCode: ANEURALNETWORKS_BAD_DATA
+       on identifyInputsAndOutputs
+```
+
+**Conclusion:** Even FP32 models fail due to **dynamic shapes** and **unsupported op patterns**, not just quantization ops. The models use:
+- Dynamic sequence lengths in MatMul/Gemm
+- Gather with dynamic indices
+- Reshape with computed dimensions
+
+These patterns are fundamentally incompatible with NNAPI's static graph compilation.
+
 ### Root Causes
 
 1. **Dynamic Shapes**: Models use dynamic batch/sequence dimensions that NNAPI cannot handle
