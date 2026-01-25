@@ -96,6 +96,10 @@ The first and foremost consideration was **fully offline functionality** - no in
 
 For a detailed architectural breakdown, component analysis, system integration diagrams, and ONNX implementation details, please refer to the **[Technical Deep Dive](TECHNICAL_DEEP_DIVE.md)**.
 
+For architecture decision records (ADRs) documenting major technical decisions, see the **[docs/adr](docs/adr/)** directory.
+
+> **GPU/NPU Acceleration**: We investigated NNAPI and Qualcomm QNN for hardware acceleration. Due to model architecture constraints (dynamic shapes, unsupported ops), these were not viable. See [ADR-001](docs/adr/ADR-001-nnapi-execution-provider.md) and [ADR-002](docs/adr/ADR-002-qnn-execution-provider.md) for details. Current performance on CPU with multi-threading is optimized and works well across devices.
+
 ## 🚀 Adaptive Streaming Engine
 
 NekoSpeak features a **novel adaptive streaming architecture** that automatically optimizes audio generation for any device. This is particularly important for the Pocket-TTS engine, which uses large neural network models that may run slower than real-time on some devices.
