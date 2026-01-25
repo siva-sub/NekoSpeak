@@ -52,6 +52,47 @@ Following ADR-001's NNAPI investigation showing limited acceleration potential, 
 3. **Model Re-export**: Need to re-export models with fixed max sequence length
 4. **Platform Lock-in**: Only works on Qualcomm chipsets
 
+### FP32 Model Testing with QNN Tools
+
+We tested FP32 models with the Qualcomm QAIRT tools to evaluate QNN conversion feasibility:
+
+#### Models Analyzed
+
+| Model | Size | Nodes | Dynamic Dims |
+|-------|------|-------|--------------|
+| flow_lm_main.onnx | 289MB | 2165 | batch, seq_len |
+| flow_lm_flow.onnx | 36MB | ~500 | batch, latent_dim |
+| kokoro_82m.onnx | 331MB | 2469 | batch, seq_len |
+| mimi_decoder.onnx | 92MB | ~300 | batch, frames |
+
+#### QNN Conversion Attempt
+
+```bash
+# Attempted conversion using qnn-onnx-converter
+$ qnn-onnx-converter --input_network flow_lm_main.onnx --output_path flow_lm_main.cpp
+
+ERROR: Dynamic input dimensions detected
+- Input 'tokens': shape=[batch, seq_len] (dynamic)
+- Input 'speaker_emb': shape=[1, 1024] (static) ✓
+- Input 'kv_cache': shape=[batch, heads, cache_len, dim] (dynamic)
+
+QNN requires all input dimensions to be fixed at conversion time.
+```
+
+#### Root Cause
+
+The TTS models are designed for **variable-length sequences**:
+- Text input can be 1-500+ tokens
+- KV-cache grows with each generation step
+- Latent frames vary based on audio length
+
+To use QNN, models would need:
+1. Fixed `max_seq_length` (e.g., 512) with padding
+2. Static KV-cache allocation
+3. Batch size fixed to 1
+
+This requires **re-exporting from PyTorch source**, not just ONNX conversion.
+
 ### Effort Estimate (Not Pursued)
 
 | Task | Estimate |
