@@ -2,7 +2,7 @@
 
 **Status:** Rejected  
 **Date:** 2026-01-26  
-**Decision Makers:** @siva  
+**Decision Makers:** @siva-sub  
 
 ## Context
 
