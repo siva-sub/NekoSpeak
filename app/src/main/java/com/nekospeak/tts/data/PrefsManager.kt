@@ -2,6 +2,8 @@ package com.nekospeak.tts.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class PrefsManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -14,7 +16,27 @@ class PrefsManager(context: Context) {
         private const val KEY_SPEED = "speech_speed"
         private const val KEY_TOKEN_SIZE = "stream_token_size"
         private const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
-        private const val KEY_THEME = "app_theme" // "dark", "light", "system"
+        private const val KEY_THEME_COLOR = "app_theme_v2"
+        private const val KEY_DARK_MODE = "dark_mode"
+        private const val KEY_POCKET_TEMP = "pocket_temperature"
+        private const val KEY_POCKET_LSD = "pocket_lsd_steps"
+        private const val KEY_POCKET_EOS = "pocket_frames_after_eos"
+        private const val KEY_POCKET_DECODE = "pocket_decoding_mode"
+        private const val KEY_POCKET_CHUNK = "pocket_decode_chunk_size"
+    }
+
+    // Reactive counter for theme updates
+    private val _themeCounter = MutableStateFlow(0)
+    val themeCounter = _themeCounter.asStateFlow()
+
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == KEY_THEME_COLOR || key == KEY_DARK_MODE) {
+            _themeCounter.value += 1
+        }
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
     }
 
     var currentVoice: String
@@ -26,7 +48,7 @@ class PrefsManager(context: Context) {
         set(value) = prefs.edit().putString(KEY_MODEL, value).apply()
 
     var cpuThreads: Int
-        get() = prefs.getInt(KEY_THREADS, 6) // Default to 6 (optimized)
+        get() = prefs.getInt(KEY_THREADS, 6)
         set(value) = prefs.edit().putInt(KEY_THREADS, value).apply()
 
     var speechSpeed: Float
@@ -41,31 +63,32 @@ class PrefsManager(context: Context) {
         get() = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
         set(value) = prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETE, value).apply()
         
-    // Future use
-    var theme: String
-        get() = prefs.getString(KEY_THEME, "system") ?: "system"
-        set(value) = prefs.edit().putString(KEY_THEME, value).apply()
+    var appTheme: String
+        get() = prefs.getString(KEY_THEME_COLOR, "BLUE") ?: "BLUE"
+        set(value) = prefs.edit().putString(KEY_THEME_COLOR, value).apply()
     
-    // Pocket-TTS specific settings (from KevinAHM reference)
+    var darkMode: String
+        get() = prefs.getString(KEY_DARK_MODE, "FOLLOW_SYSTEM") ?: "FOLLOW_SYSTEM"
+        set(value) = prefs.edit().putString(KEY_DARK_MODE, value).apply()
+
+    // Restored Pocket-TTS settings
     var pocketTemperature: Float
-        get() = prefs.getFloat("pocket_temperature", 0.7f)
-        set(value) = prefs.edit().putFloat("pocket_temperature", value).apply()
+        get() = prefs.getFloat(KEY_POCKET_TEMP, 0.7f)
+        set(value) = prefs.edit().putFloat(KEY_POCKET_TEMP, value).apply()
     
     var pocketLsdSteps: Int
-        get() = prefs.getInt("pocket_lsd_steps", 10)
-        set(value) = prefs.edit().putInt("pocket_lsd_steps", value).apply()
+        get() = prefs.getInt(KEY_POCKET_LSD, 10)
+        set(value) = prefs.edit().putInt(KEY_POCKET_LSD, value).apply()
     
     var pocketFramesAfterEos: Int
-        get() = prefs.getInt("pocket_frames_after_eos", 3)
-        set(value) = prefs.edit().putInt("pocket_frames_after_eos", value).apply()
+        get() = prefs.getInt(KEY_POCKET_EOS, 3)
+        set(value) = prefs.edit().putInt(KEY_POCKET_EOS, value).apply()
     
-    // Decoding mode: "batch" (collect-then-decode, higher quality) or "streaming" (adaptive chunking, lower latency)
     var pocketDecodingMode: String
-        get() = prefs.getString("pocket_decoding_mode", "batch") ?: "batch"
-        set(value) = prefs.edit().putString("pocket_decoding_mode", value).apply()
+        get() = prefs.getString(KEY_POCKET_DECODE, "batch") ?: "batch"
+        set(value) = prefs.edit().putString(KEY_POCKET_DECODE, value).apply()
     
-    // Chunk size for batch decoding (default 15 frames per reference)
     var pocketDecodeChunkSize: Int
-        get() = prefs.getInt("pocket_decode_chunk_size", 15)
-        set(value) = prefs.edit().putInt("pocket_decode_chunk_size", value).apply()
+        get() = prefs.getInt(KEY_POCKET_CHUNK, 15)
+        set(value) = prefs.edit().putInt(KEY_POCKET_CHUNK, value).apply()
 }

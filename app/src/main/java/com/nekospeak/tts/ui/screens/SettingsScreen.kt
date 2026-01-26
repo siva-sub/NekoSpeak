@@ -19,7 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(navController: NavController) {
     val context = LocalContext.current
@@ -469,6 +469,46 @@ fun SettingsScreen(navController: NavController) {
                         context.startActivity(intent)
                     }
                 )
+            }
+            
+            HorizontalDivider()
+            
+            // Appearance Section - Book-Story inspired theme picker
+            SettingsSection(title = "Appearance") {
+                Column {
+                    var appTheme by remember { mutableStateOf(prefs.appTheme) }
+                    var darkMode by remember { mutableStateOf(prefs.darkMode) }
+                    
+                    // Determine dark mode state for preview
+                    val isDarkPreview = when (darkMode) {
+                        "FOLLOW_SYSTEM" -> androidx.compose.foundation.isSystemInDarkTheme()
+                        "LIGHT" -> false
+                        else -> true
+                    }
+                    val isPureDark = darkMode == "PURE_DARK"
+                    
+                    // Theme color picker with mini preview cards
+                    com.nekospeak.tts.ui.theme.ThemePicker(
+                        selectedTheme = appTheme,
+                        isDarkMode = isDarkPreview,
+                        isPureDark = isPureDark,
+                        onThemeSelected = { theme ->
+                            appTheme = theme
+                            prefs.appTheme = theme
+                        }
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Dark mode picker
+                    com.nekospeak.tts.ui.theme.DarkModePicker(
+                        selectedMode = darkMode,
+                        onModeSelected = { mode ->
+                            darkMode = mode
+                            prefs.darkMode = mode
+                        }
+                    )
+                }
             }
             
             HorizontalDivider()

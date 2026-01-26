@@ -150,5 +150,13 @@
     <string name="ok">OK</string>
     <string name="yes">Yes</string>
     <string name="no">No</string>
+        <!-- Themes -->
+    <string name="theme_dynamic">Dynamic</string>
+    <string name="theme_blue">Blue</string>
+    <string name="theme_green">Green</string>
+    <string name="theme_purple">Purple</string>
+    <string name="theme_pink">Pink</string>
+    <string name="theme_aqua">Aqua</string>
+    <string name="theme_gray">Gray</string>
     
 </resources>

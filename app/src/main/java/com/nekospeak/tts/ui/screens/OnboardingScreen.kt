@@ -239,15 +239,64 @@ fun OnboardingScreen(navController: NavController) {
                             }
                         }
                         2 -> {
-                            // Step 3: System Setup
+                            // Step 3: System Setup + Theme
                             Text(
-                                text = "3. Enable System-wide",
+                                text = "3. Customize Your Experience",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                             )
                             
+                            // Theme Selection - Book-Story inspired mini preview cards
+                            var appTheme by remember { mutableStateOf(prefs.appTheme) }
+                            var darkMode by remember { mutableStateOf(prefs.darkMode) }
+                            
+                            // Determine if dark mode preview should be shown
+                            val isDarkPreview = when (darkMode) {
+                                "FOLLOW_SYSTEM" -> androidx.compose.foundation.isSystemInDarkTheme()
+                                "LIGHT" -> false
+                                else -> true
+                            }
+                            val isPureDark = darkMode == "PURE_DARK"
+                            
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color.White.copy(alpha = 0.05f)
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(vertical = 12.dp)
+                                ) {
+                                    // Theme color picker with mini preview cards
+                                    com.nekospeak.tts.ui.theme.ThemePicker(
+                                        selectedTheme = appTheme,
+                                        isDarkMode = isDarkPreview,
+                                        isPureDark = isPureDark,
+                                        onThemeSelected = { theme ->
+                                            appTheme = theme
+                                            prefs.appTheme = theme
+                                        }
+                                    )
+                                    
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    
+                                    // Dark mode picker
+                                    com.nekospeak.tts.ui.theme.DarkModePicker(
+                                        selectedMode = darkMode,
+                                        onModeSelected = { mode ->
+                                            darkMode = mode
+                                            prefs.darkMode = mode
+                                        }
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            // TTS Setup
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp),
@@ -259,12 +308,19 @@ fun OnboardingScreen(navController: NavController) {
                                     modifier = Modifier.padding(16.dp)
                                 ) {
                                     Text(
-                                        text = "To use NekoSpeak with other apps, set it as your default TTS engine.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = Color.White.copy(alpha = 0.8f)
+                                        text = "Enable System-wide TTS (Optional)",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
                                     )
-                                    Spacer(modifier = Modifier.height(16.dp))
-                                    Button(
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "To use NekoSpeak with other apps, set it as your default TTS engine.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.7f)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedButton(
                                         onClick = {
                                             try {
                                                 val intent = android.content.Intent("com.android.settings.TTS_SETTINGS")
@@ -274,14 +330,10 @@ fun OnboardingScreen(navController: NavController) {
                                                 // Fallback
                                             }
                                         },
-                                        modifier = Modifier.fillMaxWidth().height(48.dp),
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        modifier = Modifier.fillMaxWidth().height(40.dp),
+                                        shape = RoundedCornerShape(8.dp)
                                     ) {
-                                        Text("Open TTS Settings")
+                                        Text("Open TTS Settings", color = Color.White)
                                     }
                                 }
                             }

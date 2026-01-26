@@ -7,7 +7,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/siva-sub/NekoSpeak?style=social)](https://github.com/siva-sub/NekoSpeak/stargazers)
 ![ONNX Runtime](https://img.shields.io/badge/ONNX%20Runtime-1.18.0-blue)
 ![CPU](https://img.shields.io/badge/CPU-supported-brightgreen)
-[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.3.0)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
+[![Download APK](https://img.shields.io/badge/Download-APK%20(v1.4.0)-blue?style=for-the-badge&logo=android)](https://github.com/siva-sub/NekoSpeak/releases)
 
 **NekoSpeak** is a high-performance, on-device Text-to-Speech (TTS) engine for Android, capable of running **100% offline** with low latency. It bridges the gap between modern AI voice synthesis and the standard Android TTS API.
 
@@ -61,19 +61,19 @@ The first and foremost consideration was **fully offline functionality** - no in
 
 ## 📥 Download
 
-**v1.3.0 is now available!**
+**v1.4.0 is now available!**
 
 > **Why is the APK size large?**
 > NekoSpeak comes pre-packaged with the Piper engine and Amy Low voice to ensure **100% offline functionality** right out of the box. The Pocket-TTS model is downloaded separately on first use.
 
 *   **Universal** (135 MB): Works on all devices.
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.3.0/app-universal-release.apk)
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.4.0/app-universal-release.apk)
 *   **arm64-v8a** (88 MB): Optimized for modern devices (Pixel, Samsung S-series).
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.3.0/app-arm64-v8a-release.apk)
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.4.0/app-arm64-v8a-release.apk)
 *   **armeabi-v7a** (82 MB): Optimized for older/low-end devices.
-    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.3.0/app-armeabi-v7a-release.apk)
+    *   [Download apk](https://github.com/siva-sub/NekoSpeak/releases/download/v1.4.0/app-armeabi-v7a-release.apk)
 
-[**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.3.0)
+[**View Full Release Notes**](https://github.com/siva-sub/NekoSpeak/releases/tag/v1.4.0)
 
 ## 📂 Project Structure
 
