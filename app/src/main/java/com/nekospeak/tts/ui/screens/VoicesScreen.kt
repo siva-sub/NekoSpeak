@@ -1,5 +1,6 @@
 package com.nekospeak.tts.ui.screens
 
+import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -23,6 +24,7 @@ import com.nekospeak.tts.data.PrefsManager
 import com.nekospeak.tts.ui.components.VoiceCard
 import com.nekospeak.tts.ui.viewmodel.VoicesViewModel
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +40,11 @@ fun VoicesScreen(
     val prefs = remember { PrefsManager(context) }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    // Test Speech State
+    var testText by remember { mutableStateOf("Hello, I am NekoSpeak.") }
+    var speechRate by remember { mutableFloatStateOf(1.0f) }
+    var tts: TextToSpeech? by remember { mutableStateOf(null) }
+    var isSpeaking by remember { mutableStateOf(false) }
     var showLanguageModal by remember { mutableStateOf(false) }
     var showRegionModal by remember { mutableStateOf(false) }
     var showGenderModal by remember { mutableStateOf(false) }
@@ -51,10 +58,38 @@ fun VoicesScreen(
     var voiceCloneTranscript by remember { mutableStateOf("") } // Kept for API compat but not used
     var isCloning by remember { mutableStateOf(false) }
 
+    DisposableEffect(Unit) {
+        // Explicitly use our own engine package to ensure we test NekoSpeak
+        // regardless of the system-wide default setting.
+        tts = TextToSpeech(context, { status ->
+             if (status == TextToSpeech.SUCCESS) {
+                 // Set up utterance progress listener to track speaking state
+                 tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                     override fun onStart(utteranceId: String?) {
+                         isSpeaking = true
+                     }
+
+                     override fun onDone(utteranceId: String?) {
+                         isSpeaking = false
+                     }
+
+                     override fun onError(utteranceId: String?) {
+                         isSpeaking = false
+                     }
+                 })
+             }
+        }, "com.nekospeak.tts")
+        onDispose {
+            tts?.shutdown()
+        }
+    }
+
     // Sync ViewModel selection with Prefs
     LaunchedEffect(uiState.selectedVoiceId) {
         uiState.selectedVoiceId?.let {
              prefs.currentVoice = it
+             // Auto-update test text based on language
+             testText = viewModel.getSampleTextForVoice(it)
         }
     }
     
@@ -275,7 +310,8 @@ fun VoicesScreen(
             } else {
                 // Voice List
                 LazyColumn(
-                    contentPadding = PaddingValues(start=16.dp, end=16.dp, bottom=100.dp), // Extra bottom padding for TestBar
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(start=16.dp, end=16.dp, top=8.dp, bottom=16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(uiState.filteredVoices) { voice ->
@@ -285,6 +321,57 @@ fun VoicesScreen(
                             onVoiceSelected = { viewModel.selectVoice(voice.id) },
                             onDownload = { viewModel.downloadVoice(voice) },
                             onDelete = if (voice.isCloned) {{ viewModel.deleteClonedVoice(voice.id) }} else null
+                        )
+                    }
+                }
+            }
+
+            // Test Speech Area at bottom
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                        .navigationBarsPadding(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = testText,
+                        onValueChange = { testText = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Test voice...") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        textStyle = MaterialTheme.typography.bodyMedium
+                    )
+                    FloatingActionButton(
+                        onClick = {
+                             if (isSpeaking) {
+                                 tts?.stop()
+                                 isSpeaking = false
+                             } else {
+                                 val voiceId = uiState.selectedVoiceId ?: prefs.currentVoice
+                                 val params = android.os.Bundle()
+                                 params.putString("voiceName", voiceId)
+                                 tts?.stop()
+                                 tts?.setSpeechRate(prefs.speechSpeed)
+                                 tts?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test_id")
+                             }
+                        },
+                        containerColor = if (isSpeaking)
+                            MaterialTheme.colorScheme.error
+                        else
+                            MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(56.dp)
+                    ) {
+                        Icon(
+                            if (isSpeaking) Icons.Default.Close else Icons.Default.PlayArrow,
+                            contentDescription = if (isSpeaking) "Stop" else "Play"
                         )
                     }
                 }
