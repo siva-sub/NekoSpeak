@@ -44,6 +44,7 @@ fun VoicesScreen(
     var testText by remember { mutableStateOf("Hello, I am NekoSpeak.") }
     var speechRate by remember { mutableFloatStateOf(1.0f) }
     var tts: TextToSpeech? by remember { mutableStateOf(null) }
+    var isSpeaking by remember { mutableStateOf(false) }
     var showLanguageModal by remember { mutableStateOf(false) }
     var showRegionModal by remember { mutableStateOf(false) }
     var showGenderModal by remember { mutableStateOf(false) }
@@ -62,7 +63,20 @@ fun VoicesScreen(
         // regardless of the system-wide default setting.
         tts = TextToSpeech(context, { status ->
              if (status == TextToSpeech.SUCCESS) {
-                 // Init
+                 // Set up utterance progress listener to track speaking state
+                 tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                     override fun onStart(utteranceId: String?) {
+                         isSpeaking = true
+                     }
+
+                     override fun onDone(utteranceId: String?) {
+                         isSpeaking = false
+                     }
+
+                     override fun onError(utteranceId: String?) {
+                         isSpeaking = false
+                     }
+                 })
              }
         }, "com.nekospeak.tts")
         onDispose {
@@ -180,29 +194,34 @@ fun VoicesScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     FloatingActionButton(
                         onClick = {
-                             val voiceId = uiState.selectedVoiceId ?: prefs.currentVoice
-                             val params = android.os.Bundle()
-                             params.putString("voiceName", voiceId)
-                             
-                             // Graceful recovery: stop, and if isSpeaking was true after stop, recreate TTS
-                             val wasSpeaking = tts?.isSpeaking == true
-                             tts?.stop()
-                             
-                             // If TTS was stuck or in an error state, recreate it
-                             if (wasSpeaking) {
-                                 // Give a brief moment for stop to take effect
-                                 tts?.shutdown()
-                                 tts = TextToSpeech(context, { _ -> }, "com.nekospeak.tts")
+                             if (isSpeaking) {
+                                 // Stop speaking
+                                 tts?.stop()
+                                 isSpeaking = false
+                             } else {
+                                 // Start speaking
+                                 val voiceId = uiState.selectedVoiceId ?: prefs.currentVoice
+                                 val params = android.os.Bundle()
+                                 params.putString("voiceName", voiceId)
+
+                                 // Stop any previous speech
+                                 tts?.stop()
+
+                                 // Set the speech rate from preferences
+                                 tts?.setSpeechRate(prefs.speechSpeed)
+
+                                 tts?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test_id")
                              }
-                             
-                             // Set the speech rate from preferences
-                             tts?.setSpeechRate(prefs.speechSpeed)
-                             
-                             tts?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test_id")
                         },
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = if (isSpeaking)
+                            MaterialTheme.colorScheme.error
+                        else
+                            MaterialTheme.colorScheme.primary
                     ) {
-                        Icon(Icons.Default.PlayArrow, "Speak")
+                        Icon(
+                            if (isSpeaking) Icons.Default.Close else Icons.Default.PlayArrow,
+                            contentDescription = if (isSpeaking) "Stop" else "Speak"
+                        )
                     }
                 }
             }
