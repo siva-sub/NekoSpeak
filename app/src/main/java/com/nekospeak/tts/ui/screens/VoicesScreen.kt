@@ -1,6 +1,5 @@
 package com.nekospeak.tts.ui.screens
 
-import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -24,7 +23,6 @@ import com.nekospeak.tts.data.PrefsManager
 import com.nekospeak.tts.ui.components.VoiceCard
 import com.nekospeak.tts.ui.viewmodel.VoicesViewModel
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,17 +37,12 @@ fun VoicesScreen(
     val scope = rememberCoroutineScope()
     val prefs = remember { PrefsManager(context) }
     val snackbarHostState = remember { SnackbarHostState() }
-    
-    // Test Speech State
-    var testText by remember { mutableStateOf("Hello, I am NekoSpeak.") }
-    var speechRate by remember { mutableFloatStateOf(1.0f) }
-    var tts: TextToSpeech? by remember { mutableStateOf(null) }
-    var isSpeaking by remember { mutableStateOf(false) }
+
     var showLanguageModal by remember { mutableStateOf(false) }
     var showRegionModal by remember { mutableStateOf(false) }
     var showGenderModal by remember { mutableStateOf(false) }
     var showQualityModal by remember { mutableStateOf(false) }
-    
+
     // Voice cloning state
     var showCloneOptionsSheet by remember { mutableStateOf(false) }
     var showVoiceNameDialog by remember { mutableStateOf(false) }
@@ -57,39 +50,11 @@ fun VoicesScreen(
     var voiceCloneName by remember { mutableStateOf("") }
     var voiceCloneTranscript by remember { mutableStateOf("") } // Kept for API compat but not used
     var isCloning by remember { mutableStateOf(false) }
-    
-    DisposableEffect(Unit) {
-        // Explicitly use our own engine package to ensure we test NekoSpeak
-        // regardless of the system-wide default setting.
-        tts = TextToSpeech(context, { status ->
-             if (status == TextToSpeech.SUCCESS) {
-                 // Set up utterance progress listener to track speaking state
-                 tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
-                     override fun onStart(utteranceId: String?) {
-                         isSpeaking = true
-                     }
 
-                     override fun onDone(utteranceId: String?) {
-                         isSpeaking = false
-                     }
-
-                     override fun onError(utteranceId: String?) {
-                         isSpeaking = false
-                     }
-                 })
-             }
-        }, "com.nekospeak.tts")
-        onDispose {
-            tts?.shutdown()
-        }
-    }
-    
     // Sync ViewModel selection with Prefs
     LaunchedEffect(uiState.selectedVoiceId) {
-        uiState.selectedVoiceId?.let { 
+        uiState.selectedVoiceId?.let {
              prefs.currentVoice = it
-             // Auto-update test text based on language
-             testText = viewModel.getSampleTextForVoice(it)
         }
     }
     
@@ -184,6 +149,11 @@ fun VoicesScreen(
                             textStyle = MaterialTheme.typography.bodySmall
                         )
                     }
+                },
+                navigationIcon = {
+                    IconButton(onClick = { navController.navigate("settings") }) {
+                        Icon(Icons.Default.Settings, "Settings")
+                    }
                 }
             )
         },
@@ -196,63 +166,6 @@ fun VoicesScreen(
                     text = { Text("Clone Voice") },
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
-            }
-        },
-        bottomBar = {
-            // Test Speech Bar
-            Surface(
-                tonalElevation = 8.dp,
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                        .navigationBarsPadding()
-                        .imePadding(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = testText,
-                        onValueChange = { testText = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Type to speak...") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    FloatingActionButton(
-                        onClick = {
-                             if (isSpeaking) {
-                                 // Stop speaking
-                                 tts?.stop()
-                                 isSpeaking = false
-                             } else {
-                                 // Start speaking
-                                 val voiceId = uiState.selectedVoiceId ?: prefs.currentVoice
-                                 val params = android.os.Bundle()
-                                 params.putString("voiceName", voiceId)
-
-                                 // Stop any previous speech
-                                 tts?.stop()
-
-                                 // Set the speech rate from preferences
-                                 tts?.setSpeechRate(prefs.speechSpeed)
-
-                                 tts?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test_id")
-                             }
-                        },
-                        containerColor = if (isSpeaking)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.primary
-                    ) {
-                        Icon(
-                            if (isSpeaking) Icons.Default.Close else Icons.Default.PlayArrow,
-                            contentDescription = if (isSpeaking) "Stop" else "Speak"
-                        )
-                    }
-                }
             }
         }
     ) { paddingValues ->
