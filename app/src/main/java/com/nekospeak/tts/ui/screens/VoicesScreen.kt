@@ -25,6 +25,7 @@ import com.nekospeak.tts.ui.components.VoiceCard
 import com.nekospeak.tts.ui.viewmodel.VoicesViewModel
 import kotlinx.coroutines.launch
 import java.util.Locale
+import com.google.mlkit.nl.languageid.LanguageIdentification
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -353,20 +354,62 @@ fun VoicesScreen(
                             textStyle = MaterialTheme.typography.bodyMedium
                         )
 
-                        // Clear button at top-right
+                        // Auto and Clear buttons at top-right
                         if (testText.isNotEmpty()) {
-                            IconButton(
-                                onClick = { testText = "" },
+                            Row(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .size(32.dp)
+                                    .padding(4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "Clear",
-                                    modifier = Modifier.size(20.dp)
-                                )
+                                // Auto language detect button
+                                TextButton(
+                                    onClick = {
+                                        scope.launch {
+                                            val languageIdentifier = LanguageIdentification.getClient()
+                                            languageIdentifier.identifyLanguage(testText)
+                                                .addOnSuccessListener { languageCode ->
+                                                    // Map language to model
+                                                    val newModel = when (languageCode) {
+                                                        "en" -> "kokoro_v1" // English -> Kokoro
+                                                        "zh", "ja", "ko", "es", "fr", "de" -> "piper_en_US-amy-low" // Multi-language -> Piper
+                                                        else -> prefs.currentModel // Keep current if unknown
+                                                    }
+                                                    if (newModel != prefs.currentModel) {
+                                                        prefs.currentModel = newModel
+                                                        if (newModel.startsWith("piper")) {
+                                                            prefs.currentVoice = "en_US-amy-low"
+                                                        }
+                                                        // Reload voices for new model
+                                                        viewModel.loadVoices()
+                                                        viewModel.selectVoice(prefs.currentVoice)
+                                                    }
+                                                }
+                                                .addOnFailureListener {
+                                                    // Silently fail, keep current model
+                                                }
+                                        }
+                                    },
+                                    modifier = Modifier.height(32.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "Auto",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+
+                                // Clear button
+                                IconButton(
+                                    onClick = { testText = "" },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Clear",
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     }

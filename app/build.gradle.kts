@@ -116,7 +116,10 @@ dependencies {
 
     // JSON
     implementation("com.google.code.gson:gson:2.10.1")
-    
+
+    // ML Kit Language Identification
+    implementation("com.google.mlkit:language-id:17.0.5")
+
     // JTransforms FFT library for GTCRN denoising STFT/iSTFT
     implementation("com.github.wendykierp:JTransforms:3.2")
     
