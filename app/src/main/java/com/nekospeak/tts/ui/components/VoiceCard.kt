@@ -53,19 +53,19 @@ fun VoiceCard(
             Row(
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Voice Icon / Initials
+                // Language Icon (Rounded Square)
                 Box(
                     modifier = Modifier
                         .size(48.dp)
-                        .clip(CircleShape)
+                        .clip(RoundedCornerShape(12.dp))
                         .background(
                             if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = voice.name.first().toString(),
-                        style = MaterialTheme.typography.titleLarge,
+                        text = voice.language.uppercase().take(2),
+                        style = MaterialTheme.typography.titleMedium,
                         color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
                         fontWeight = FontWeight.Bold
                     )
