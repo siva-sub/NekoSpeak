@@ -335,9 +335,8 @@ fun VoicesScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(16.dp)
-                        .navigationBarsPadding(),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
@@ -345,7 +344,8 @@ fun VoicesScreen(
                         onValueChange = { testText = it },
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Test voice...") },
-                        singleLine = true,
+                        singleLine = false,
+                        maxLines = 5,
                         shape = RoundedCornerShape(12.dp),
                         textStyle = MaterialTheme.typography.bodyMedium
                     )
