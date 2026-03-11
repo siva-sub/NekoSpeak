@@ -147,12 +147,41 @@ fun VoicesScreen(
         },
         topBar = {
             TopAppBar(
-                title = { 
-                    Column {
-                        Text("Voices", style = MaterialTheme.typography.titleLarge)
-                        Text(
-                            text = "${uiState.filteredVoices.size} voices available",
-                            style = MaterialTheme.typography.labelMedium
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(0.45f)) {
+                            Text("Voices", style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                text = "${uiState.filteredVoices.size} voices available",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        // Search Bar
+                        OutlinedTextField(
+                            value = uiState.searchQuery,
+                            onValueChange = viewModel::updateSearchQuery,
+                            modifier = Modifier
+                                .weight(0.55f)
+                                .height(48.dp),
+                            placeholder = { Text("Search...") },
+                            leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp)) },
+                            trailingIcon = {
+                                if (uiState.searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.updateSearchQuery("") }) {
+                                        Icon(Icons.Default.Clear, null, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            textStyle = MaterialTheme.typography.bodySmall
                         )
                     }
                 }
@@ -236,26 +265,6 @@ fun VoicesScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
-            // Search Bar
-            OutlinedTextField(
-                value = uiState.searchQuery,
-                onValueChange = viewModel::updateSearchQuery,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Search voices...") },
-                leadingIcon = { Icon(Icons.Default.Search, null) },
-                trailingIcon = {
-                    if (uiState.searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.updateSearchQuery("") }) {
-                            Icon(Icons.Default.Clear, null)
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
-            
             // Filters Row
             Row(
                 modifier = Modifier
