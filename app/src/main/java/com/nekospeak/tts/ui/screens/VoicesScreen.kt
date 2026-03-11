@@ -335,44 +335,118 @@ fun VoicesScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 10.dp),
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    OutlinedTextField(
-                        value = testText,
-                        onValueChange = { testText = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Test voice...") },
-                        singleLine = false,
-                        maxLines = 5,
-                        shape = RoundedCornerShape(12.dp),
-                        textStyle = MaterialTheme.typography.bodyMedium
-                    )
-                    FloatingActionButton(
-                        onClick = {
-                             if (isSpeaking) {
-                                 tts?.stop()
-                                 isSpeaking = false
-                             } else {
-                                 val voiceId = uiState.selectedVoiceId ?: prefs.currentVoice
-                                 val params = android.os.Bundle()
-                                 params.putString("voiceName", voiceId)
-                                 tts?.stop()
-                                 tts?.setSpeechRate(prefs.speechSpeed)
-                                 tts?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test_id")
-                             }
-                        },
-                        containerColor = if (isSpeaking)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(56.dp)
-                    ) {
-                        Icon(
-                            if (isSpeaking) Icons.Default.Close else Icons.Default.PlayArrow,
-                            contentDescription = if (isSpeaking) "Stop" else "Play"
+                    // Left: Text Input
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = testText,
+                            onValueChange = { testText = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(272.dp),
+                            placeholder = { Text("Test voice...") },
+                            singleLine = false,
+                            shape = RoundedCornerShape(12.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium
                         )
+
+                        // Clear button at top-right
+                        if (testText.isNotEmpty()) {
+                            IconButton(
+                                onClick = { testText = "" },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Clear",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Right: Play button + Model buttons
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // Play/Stop Button
+                        FloatingActionButton(
+                            onClick = {
+                                 if (isSpeaking) {
+                                     tts?.stop()
+                                     isSpeaking = false
+                                 } else {
+                                     val voiceId = uiState.selectedVoiceId ?: prefs.currentVoice
+                                     val params = android.os.Bundle()
+                                     params.putString("voiceName", voiceId)
+                                     tts?.stop()
+                                     tts?.setSpeechRate(prefs.speechSpeed)
+                                     tts?.speak(testText, TextToSpeech.QUEUE_FLUSH, params, "test_id")
+                                 }
+                            },
+                            containerColor = if (isSpeaking)
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                if (isSpeaking) Icons.Default.Close else Icons.Default.PlayArrow,
+                                contentDescription = if (isSpeaking) "Stop" else "Play"
+                            )
+                        }
+
+                        // Model Toggle Buttons
+                        val models = listOf(
+                            "pocket_v1" to "PO",
+                            "kokoro_v1" to "KO",
+                            "kitten_nano" to "KI",
+                            "piper" to "PI"
+                        )
+
+                        models.forEach { (modelId, label) ->
+                            val isSelected = if (modelId == "piper") {
+                                prefs.currentModel.startsWith("piper")
+                            } else {
+                                prefs.currentModel == modelId
+                            }
+
+                            Surface(
+                                onClick = {
+                                    if (modelId == "piper") {
+                                        prefs.currentModel = "piper_en_US-amy-low"
+                                        prefs.currentVoice = "en_US-amy-low"
+                                    } else {
+                                        prefs.currentModel = modelId
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected)
+                                    MaterialTheme.colorScheme.primaryContainer
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = label,
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected)
+                                            MaterialTheme.colorScheme.onPrimaryContainer
+                                        else
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
