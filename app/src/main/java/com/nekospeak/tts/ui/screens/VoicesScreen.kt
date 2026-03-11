@@ -52,7 +52,6 @@ fun VoicesScreen(
     var showQualityModal by remember { mutableStateOf(false) }
 
     // Voice cloning state
-    var showCloneOptionsSheet by remember { mutableStateOf(false) }
     var showVoiceNameDialog by remember { mutableStateOf(false) }
     var voiceClonePath by remember { mutableStateOf<String?>(null) }
     var voiceCloneName by remember { mutableStateOf("") }
@@ -196,12 +195,26 @@ fun VoicesScreen(
 
         floatingActionButton = {
             if (prefs.currentModel == "pocket_v1") {
-                ExtendedFloatingActionButton(
-                    onClick = { showCloneOptionsSheet = true },
-                    icon = { Icon(Icons.Default.Add, "Clone Voice") },
-                    text = { Text("Clone Voice") },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(end = 60.dp) // Space for model buttons
+                ) {
+                    // Upload Audio File button
+                    FloatingActionButton(
+                        onClick = { audioPickerLauncher.launch("audio/*") },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Icon(Icons.Default.Add, "Upload Audio")
+                    }
+
+                    // Record Voice button
+                    ExtendedFloatingActionButton(
+                        onClick = { navController.navigate(com.nekospeak.tts.ui.navigation.Screen.VoiceRecorder.route) },
+                        icon = { Icon(Icons.Default.PlayArrow, "Record") },
+                        text = { Text("Clone Voice") },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -615,52 +628,7 @@ fun VoicesScreen(
                 }
             }
         }
-        
-        // Voice Cloning Options Sheet
-        if (showCloneOptionsSheet) {
-            ModalBottomSheet(onDismissRequest = { showCloneOptionsSheet = false }) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 32.dp)
-                ) {
-                    Text(
-                        "Clone a Voice",
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.padding(16.dp)
-                    )
-                    HorizontalDivider()
-                    
-                    // Record option
-                    ListItem(
-                        headlineContent = { Text("Record Voice") },
-                        supportingContent = { Text("Record 5-10 seconds of speech") },
-                        leadingContent = { Icon(Icons.Default.PlayArrow, null) },
-                        modifier = Modifier.clickable {
-                            showCloneOptionsSheet = false
-                            navController.navigate(com.nekospeak.tts.ui.navigation.Screen.VoiceRecorder.route)
-                        }
-                    )
-                    
-                    // Upload option
-                    ListItem(
-                        headlineContent = { Text("Upload Audio File") },
-                        supportingContent = { Text("Select a WAV or MP3 file") },
-                        leadingContent = { Icon(Icons.Default.Create, null) },
-                        modifier = Modifier.clickable {
-                            showCloneOptionsSheet = false
-                            audioPickerLauncher.launch("audio/*")
-                        }
-                    )
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
-            }
-        }
-        
-        // NOTE: Transcript dialog removed - transcripts don't improve voice cloning
-        // Voice embeddings come purely from mimi_encoder(audio), no text involved
-        
+
         // Voice Name Dialog (step 2 for file upload, or direct from recording)
         if (showVoiceNameDialog && voiceClonePath != null) {
             AlertDialog(
