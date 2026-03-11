@@ -70,9 +70,9 @@ fun VoiceCard(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.width(16.dp))
-                
+
                 // Voice Details
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
@@ -80,71 +80,77 @@ fun VoiceCard(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Flag or Region Tag
-                        SuggestionChip(
-                            onClick = { },
-                            label = { Text(voice.region) },
-                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant
-                            ),
-                            modifier = Modifier.height(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (voice.gender == "Unknown" || voice.gender.isEmpty()) voice.language else "${voice.gender} • ${voice.language}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                
-                
-                // Download Action (show for Piper voices with metadata or celebrity voices without downloads)
-                if (!isDownloaded && !isDownloading) {
-                     IconButton(onClick = onDownload) {
-                         Icon(
-                             imageVector = androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
-                             contentDescription = "Download Voice",
-                             tint = MaterialTheme.colorScheme.primary
-                         )
-                     }
-                }
-                
-                // Delete button for cloned voices
-                if (canDelete) {
-                    IconButton(onClick = { onDelete?.invoke() }) {
-                        Icon(
-                            imageVector = androidx.compose.material.icons.Icons.Default.Close,
-                            contentDescription = "Delete Voice",
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
-            
-            if (isDownloading) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "Downloading...", 
-                        style = MaterialTheme.typography.labelSmall, 
-                        color = MaterialTheme.colorScheme.primary
+                        text = if (voice.gender == "Unknown" || voice.gender.isEmpty()) voice.language else "${voice.gender} • ${voice.language}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        "${(voice.downloadProgress * 100).toInt()}%", 
-                        style = MaterialTheme.typography.labelSmall
+                    Spacer(modifier = Modifier.height(4.dp))
+                    // Flag or Region Tag
+                    SuggestionChip(
+                        onClick = { },
+                        label = { Text(voice.region) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        modifier = Modifier.height(24.dp)
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { voice.downloadProgress },
-                    modifier = Modifier.fillMaxWidth().height(4.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                // Download/Delete Section
+                Column(horizontalAlignment = Alignment.End) {
+                    // Download Action with background
+                    if (!isDownloaded && !isDownloading) {
+                        Surface(
+                            onClick = onDownload,
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
+                                    contentDescription = "Download Voice",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Delete button for cloned voices
+                    if (canDelete) {
+                        IconButton(onClick = { onDelete?.invoke() }) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                                contentDescription = "Delete Voice",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+
+                    // Download Progress below button
+                    if (isDownloading) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                "${(voice.downloadProgress * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { voice.downloadProgress },
+                                modifier = Modifier.width(60.dp).height(4.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
