@@ -43,7 +43,7 @@ fun VoicesScreen(
 
     // Test Speech State
     var testText by remember { mutableStateOf("Hello, I am NekoSpeak.") }
-    var speechRate by remember { mutableFloatStateOf(1.0f) }
+    var speechRate by remember { mutableFloatStateOf(prefs.speechSpeed) }
     var tts: TextToSpeech? by remember { mutableStateOf(null) }
     var isSpeaking by remember { mutableStateOf(false) }
     var showLanguageModal by remember { mutableStateOf(false) }
@@ -346,13 +346,17 @@ fun VoicesScreen(
                 tonalElevation = 3.dp,
                 shadowElevation = 8.dp
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Top
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
                     // Left: Text Input
                     Box(modifier = Modifier.weight(1f)) {
                         OutlinedTextField(
@@ -505,9 +509,58 @@ fun VoicesScreen(
                         }
                     }
                 }
+
+                    // Speech Speed Slider
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Slider(
+                            value = speechRate,
+                            onValueChange = { speechRate = it },
+                            onValueChangeFinished = { prefs.speechSpeed = speechRate },
+                            valueRange = 0.5f..2.0f,
+                            steps = 14,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(48.dp)
+                        ) {
+                            Text(
+                                text = String.format(Locale.US, "%.1fx", speechRate),
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            if (speechRate != 1.0f) {
+                                TextButton(
+                                    onClick = {
+                                        speechRate = 1.0f
+                                        prefs.speechSpeed = 1.0f
+                                    },
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.height(24.dp),
+                                    colors = ButtonDefaults.textButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                ) {
+                                    Text(
+                                        text = "Reset",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = "Speed",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
-        
+
         if (showLanguageModal) {
             ModalBottomSheet(
                 onDismissRequest = { showLanguageModal = false }
