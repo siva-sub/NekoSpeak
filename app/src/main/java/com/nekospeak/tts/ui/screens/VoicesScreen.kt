@@ -1,6 +1,9 @@
 package com.nekospeak.tts.ui.screens
 
 import android.speech.tts.TextToSpeech
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -50,6 +53,19 @@ fun VoicesScreen(
     var showRegionModal by remember { mutableStateOf(false) }
     var showGenderModal by remember { mutableStateOf(false) }
     var showQualityModal by remember { mutableStateOf(false) }
+
+    // Scroll state for hiding test area
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    var hideTestArea by remember { mutableStateOf(false) }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            hideTestArea = true
+        } else {
+            kotlinx.coroutines.delay(2000)
+            hideTestArea = false
+        }
+    }
 
     // Voice cloning state
     var showVoiceNameDialog by remember { mutableStateOf(false) }
@@ -324,6 +340,7 @@ fun VoicesScreen(
             } else {
                 // Voice List
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(start=16.dp, end=16.dp, top=8.dp, bottom=16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -341,11 +358,16 @@ fun VoicesScreen(
             }
 
             // Test Speech Area at bottom
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                tonalElevation = 3.dp,
-                shadowElevation = 8.dp
+            AnimatedVisibility(
+                visible = !hideTestArea,
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it })
             ) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    tonalElevation = 3.dp,
+                    shadowElevation = 8.dp
+                ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -557,6 +579,7 @@ fun VoicesScreen(
                             }
                         }
                     }
+                }
                 }
             }
         }
