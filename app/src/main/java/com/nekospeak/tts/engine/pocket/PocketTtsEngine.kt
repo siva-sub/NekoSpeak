@@ -40,15 +40,17 @@ class PocketTtsEngine(
         const val LATENT_DIM = 32
         const val EMBED_DIM = 1024
         const val ODE_STEPS = 20  // More steps = better quality (default: 10, max: 50)
+        private const val KV_CACHE_WINDOW = 40 // Keep last 40 frames (~3.2s); prevents O(n) inference growth
         
         // Model paths (relative to filesDir/pocket/models/)
-        // Note: mimi_encoder and text_conditioner are FP32 only (no INT8 version available)
         private const val MODELS_DIR = "pocket/models"
-        private const val MODEL_MIMI_ENCODER = "mimi_encoder.onnx"
-        private const val MODEL_TEXT_CONDITIONER = "text_conditioner.onnx"
-        private const val MODEL_FLOW_LM_MAIN = "flow_lm_main_int8.onnx"
-        private const val MODEL_FLOW_LM_FLOW = "flow_lm_flow_int8.onnx"
-        private const val MODEL_MIMI_DECODER = "mimi_decoder_int8.onnx"
+        private const val MODEL_MIMI_ENCODER     = "mimi_encoder_int8.onnx"
+        private const val MODEL_TEXT_CONDITIONER = "text_conditioner_int8.onnx"
+        private const val MODEL_FLOW_LM_MAIN     = "flow_lm_main_int8.onnx"
+        private const val MODEL_FLOW_LM_FLOW     = "flow_lm_flow_int8.onnx"
+        private const val MODEL_MIMI_DECODER     = "mimi_decoder_int8.onnx"
+
+        private const val BOS_BEFORE_VOICE_PATH = "pocket/bos_before_voice.npy"
         
         // Bundled voices path
         private const val BUNDLED_VOICES_DIR = "pocket/voices"
@@ -67,6 +69,11 @@ class PocketTtsEngine(
     private var mimiCodec: MimiCodec? = null
     private var tokenizer: PocketTokenizer? = null
     private var gtcrnDenoiser: GtcrnDenoiser? = null
+
+    // Pre-computed BOS embedding prepended to voice embeddings before voice conditioning pass.
+    // Required by the multilingual v2 bundle (bundle.json: insert_bos_before_voice = true).
+    private var bosEmbedding: FloatArray? = null
+    private var bosFrames: Int = 0
     
     private val voiceStates = mutableMapOf<String, PocketVoiceState>()
     private var currentVoice: String = "alba"
@@ -80,6 +87,8 @@ class PocketTtsEngine(
     // Flow LM state (for autoregressive generation) - map of state name to tensor data
     // Each entry has: name -> Pair(type: String, data: Any) where data is FloatArray or LongArray
     private var flowLmState: MutableMap<String, Pair<String, Any>>? = null
+    // Static shapes from model spec (may contain -1 for dynamic dims); used for KV cache windowing
+    private var flowLmStateShapes: MutableMap<String, LongArray>? = null
     
     // Pre-computed flow buffers for Euler integration (s/t time steps)
     // Computed once per lsdSteps value to avoid repeated allocation
@@ -222,6 +231,9 @@ class PocketTtsEngine(
                     gtcrnDenoiser?.initialize()
                 }
                 
+                // Load BOS-before-voice embedding (required by multilingual v2 bundle)
+                loadBosBeforeVoice()
+
                 // Load available voices
                 loadBundledVoices()
                 loadClonedVoices()
@@ -282,6 +294,59 @@ class PocketTtsEngine(
         }
     }
     
+    private fun loadBosBeforeVoice() {
+        val file = File(context.filesDir, BOS_BEFORE_VOICE_PATH)
+        if (!file.exists()) {
+            Log.w(TAG, "bos_before_voice.npy not found — voice conditioning BOS token will be skipped")
+            return
+        }
+        val result = parseNpyFloat32(file.readBytes())
+        if (result == null) {
+            Log.e(TAG, "Failed to parse bos_before_voice.npy")
+            return
+        }
+        val (data, shape) = result
+        // Shape is (1, B, EMBED_DIM); B is the number of BOS frames (typically 1)
+        bosFrames = if (shape.size >= 2) shape[shape.size - 2] else 1
+        bosEmbedding = data
+        Log.i(TAG, "Loaded bos_before_voice: $bosFrames frame(s), ${data.size} floats")
+    }
+
+    private fun parseNpyFloat32(bytes: ByteArray): Pair<FloatArray, IntArray>? {
+        if (bytes.size < 10) return null
+        val expected = byteArrayOf(0x93.toByte(), 'N'.code.toByte(), 'U'.code.toByte(),
+                                   'M'.code.toByte(), 'P'.code.toByte(), 'Y'.code.toByte())
+        for (i in expected.indices) {
+            if (bytes[i] != expected[i]) {
+                Log.e(TAG, "Invalid NPY magic bytes")
+                return null
+            }
+        }
+        val major = bytes[6].toInt() and 0xFF
+        val headerLen: Int
+        val headerOffset: Int
+        if (major == 1) {
+            headerLen = ((bytes[9].toInt() and 0xFF) shl 8) or (bytes[8].toInt() and 0xFF)
+            headerOffset = 10
+        } else {
+            headerLen = ((bytes[11].toInt() and 0xFF) shl 24) or ((bytes[10].toInt() and 0xFF) shl 16) or
+                        ((bytes[9].toInt()  and 0xFF) shl 8)  or (bytes[8].toInt()  and 0xFF)
+            headerOffset = 12
+        }
+        val header = String(bytes, headerOffset, headerLen, Charsets.US_ASCII)
+        val shapeMatch = Regex("'shape':\\s*\\(([^)]*)\\)").find(header)
+            ?: return null
+        val shape = shapeMatch.groupValues[1].split(",")
+            .map { it.trim() }.filter { it.isNotEmpty() }
+            .map { it.toInt() }.toIntArray()
+        val dataOffset = headerOffset + headerLen
+        val numFloats = (bytes.size - dataOffset) / 4
+        val buf = java.nio.ByteBuffer.wrap(bytes, dataOffset, bytes.size - dataOffset)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val data = FloatArray(numFloats) { buf.float }
+        return Pair(data, shape)
+    }
+
     // Voice embeddings cache: voiceId -> FloatArray of shape [N * 1024] flattened
     private val voiceEmbeddings = mutableMapOf<String, FloatArray>()
     private val voiceEmbeddingFrames = mutableMapOf<String, Int>()
@@ -1000,14 +1065,25 @@ class PocketTtsEngine(
             val numTextTokens = tokens.size
             
             // Voice embeddings from voice state [numFrames, 1024]
-            val voiceEmbeddings = voiceState.latents
-            val numVoiceFrames = voiceState.numFrames
-            
+            // Prepend bos_before_voice embedding when available (required by multilingual v2 bundle).
+            val (voiceEmbeddings, numVoiceFrames) = run {
+                val bos = bosEmbedding
+                if (bos != null && bosFrames > 0) {
+                    val raw = voiceState.latents
+                    val combined = FloatArray(bos.size + raw.size)
+                    bos.copyInto(combined)
+                    raw.copyInto(combined, bos.size)
+                    Pair(combined, voiceState.numFrames + bosFrames)
+                } else {
+                    Pair(voiceState.latents, voiceState.numFrames)
+                }
+            }
+
             // Empty tensors for conditioning passes
             val emptySeq = FloatArray(0) // [1, 0, 32]
             val emptyText = FloatArray(0) // [1, 0, 1024]
-            
-            // PASS 1: Voice conditioning - empty sequence, voice embeddings
+
+            // PASS 1: Voice conditioning - empty sequence, voice embeddings (with BOS prepended)
             Log.d(TAG, "Pass 1: Voice conditioning ($numVoiceFrames frames)")
             runFlowLmMainPass(session, emptySeq, 0, voiceEmbeddings, numVoiceFrames)
             
@@ -1377,7 +1453,9 @@ class PocketTtsEngine(
                             FloatArray(buf.remaining()).also { buf.get(it) }
                         }
                     }
-                    flowLmState!![stateName] = Pair(typeAndData.first, newData)
+                    val staticShape = flowLmStateShapes?.get(stateName)
+                    val windowedData = if (staticShape != null) truncateKvCache(newData, staticShape, KV_CACHE_WINDOW) else newData
+                    flowLmState!![stateName] = Pair(typeAndData.first, windowedData)
                 }
             }
             
@@ -1482,7 +1560,8 @@ class PocketTtsEngine(
         val session = flowLmMain ?: return
         
         val stateMap = mutableMapOf<String, Pair<String, Any>>()
-        
+        val shapeMap = mutableMapOf<String, LongArray>()
+
         session.inputInfo.forEach { (name, info) ->
             if (name.startsWith("state_")) {
                 val tensorInfo = info.info as? ai.onnxruntime.TensorInfo ?: return@forEach
@@ -1491,21 +1570,23 @@ class PocketTtsEngine(
                 // The model grows these during autoregressive generation
                 val size = shape.fold(1L) { acc, dim -> acc * if (dim < 0) 0 else dim }.toInt().coerceAtLeast(0)
                 val type = tensorInfo.type.toString()
-                
+
                 Log.d(TAG, "State $name: type=$type, shape=${shape.contentToString()}, size=$size")
-                
+
                 val data: Any = when {
                     type.contains("int64", ignoreCase = true) -> LongArray(size) { 0L }
                     type.contains("bool", ignoreCase = true) -> LongArray(size) { 0L }
                     else -> FloatArray(size) { 0f }
                 }
-                
+
                 stateMap[name] = Pair(type, data)
+                shapeMap[name] = shape
             }
         }
-        
+
         Log.d(TAG, "Initialized ${stateMap.size} flow LM states")
         flowLmState = stateMap
+        flowLmStateShapes = shapeMap
     }
     
     private fun updateFlowLmState(latent: FloatArray) {
@@ -1514,6 +1595,40 @@ class PocketTtsEngine(
     
     private fun resetFlowLmState() {
         flowLmState = null
+        flowLmStateShapes = null
+    }
+
+    /**
+     * Truncate KV cache state along its dynamic (sequence) dimension to at most [maxFrames].
+     * Handles any position of the dynamic dim: treats all dims before it as batch and all dims
+     * after it as frame stride, then copies the last [maxFrames] slices for each batch entry.
+     */
+    private fun truncateKvCache(data: Any, staticShape: LongArray, maxFrames: Int): Any {
+        val dynIdx = staticShape.indexOfFirst { it < 0 }
+        if (dynIdx < 0) return data
+
+        val batchCount = staticShape.take(dynIdx).fold(1L) { acc, d -> acc * d }.toInt()
+        val frameStride = staticShape.drop(dynIdx + 1).fold(1L) { acc, d -> acc * d }.toInt()
+        val totalPerBatch = batchCount * frameStride
+
+        fun <T> truncate(src: T, size: Int, newArray: (Int) -> T, copyRange: (T, Int, T, Int, Int) -> Unit): T {
+            val numFrames = size / totalPerBatch
+            if (numFrames <= maxFrames) return src
+            val skipFrames = numFrames - maxFrames
+            val dst = newArray(batchCount * maxFrames * frameStride)
+            for (b in 0 until batchCount) {
+                val srcStart = b * numFrames * frameStride + skipFrames * frameStride
+                val dstStart = b * maxFrames * frameStride
+                copyRange(src, srcStart, dst, dstStart, maxFrames * frameStride)
+            }
+            return dst
+        }
+
+        return when (data) {
+            is FloatArray -> truncate(data, data.size, ::FloatArray) { s, si, d, di, n -> System.arraycopy(s, si, d, di, n) }
+            is LongArray  -> truncate(data, data.size, ::LongArray)  { s, si, d, di, n -> System.arraycopy(s, si, d, di, n) }
+            else -> data
+        }
     }
     
     /**

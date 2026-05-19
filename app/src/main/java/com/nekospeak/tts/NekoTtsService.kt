@@ -38,7 +38,7 @@ class NekoTtsService : TextToSpeechService() {
     
     companion object {
         private const val TAG = "NekoTtsService"
-        private const val INIT_TIMEOUT_MS = 5000L  // 5 seconds max wait for engine init
+        private const val INIT_TIMEOUT_MS = 30000L  // 30 seconds max wait for engine init (pocket_v1 takes ~12s cold)
     }
     
     private val exceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
@@ -133,9 +133,13 @@ class NekoTtsService : TextToSpeechService() {
                     null
                 }
             } catch (t: Throwable) {
-                Log.e(TAG, "CRITICAL: InitJob crashed", t)
-                SupportLogStore.log(applicationContext, TAG, "Engine initialization crashed", t)
-                // Don't swap on exception either
+                if (t is kotlinx.coroutines.CancellationException) {
+                    Log.d(TAG, "Engine initialization cancelled")
+                    SupportLogStore.log(applicationContext, TAG, "Engine initialization cancelled")
+                } else {
+                    Log.e(TAG, "CRITICAL: InitJob crashed", t)
+                    SupportLogStore.log(applicationContext, TAG, "Engine initialization crashed", t)
+                }
                 null
             }
         }

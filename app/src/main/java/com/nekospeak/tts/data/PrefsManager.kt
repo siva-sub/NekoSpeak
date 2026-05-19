@@ -77,7 +77,7 @@ class PrefsManager(context: Context) {
         set(value) = prefs.edit().putFloat(KEY_POCKET_TEMP, value).apply()
     
     var pocketLsdSteps: Int
-        get() = prefs.getInt(KEY_POCKET_LSD, 10)
+        get() = prefs.getInt(KEY_POCKET_LSD, 6)
         set(value) = prefs.edit().putInt(KEY_POCKET_LSD, value).apply()
     
     var pocketFramesAfterEos: Int
@@ -85,7 +85,7 @@ class PrefsManager(context: Context) {
         set(value) = prefs.edit().putInt(KEY_POCKET_EOS, value).apply()
     
     var pocketDecodingMode: String
-        get() = prefs.getString(KEY_POCKET_DECODE, "batch") ?: "batch"
+        get() = prefs.getString(KEY_POCKET_DECODE, "streaming") ?: "streaming"
         set(value) = prefs.edit().putString(KEY_POCKET_DECODE, value).apply()
     
     var pocketDecodeChunkSize: Int

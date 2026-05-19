@@ -30,33 +30,34 @@ object ModelRepository {
     private const val TAG = "ModelRepository"
     
     // URLs from KevinAHM's HuggingFace space and official tts-voices
-    // Note: mimi_encoder and text_conditioner are FP32 only, others have INT8
     private const val HF_BASE = "https://huggingface.co/spaces/KevinAHM/pocket-tts-web/resolve/main"
+    private const val BUNDLE = "onnx/english_2026-04"
     private const val VOICES_BASE = "https://huggingface.co/kyutai/tts-voices/resolve/main"
-    
+
     val models = listOf(
         ModelInfo(
             id = "pocket_v1",
             name = "Pocket-TTS (Experimental)",
             description = "Required for voice cloning. Includes encoder, decoder, and flow matching models (~200MB total).",
             files = listOf(
-                // ONNX Models - use correct filenames from HuggingFace
-                ModelFile("pocket/models/mimi_encoder.onnx", "$HF_BASE/onnx/mimi_encoder.onnx", "Mimi Encoder (73MB)"),
-                ModelFile("pocket/models/text_conditioner.onnx", "$HF_BASE/onnx/text_conditioner.onnx", "Text Conditioner (16MB)"),
-                ModelFile("pocket/models/flow_lm_main_int8.onnx", "$HF_BASE/onnx/flow_lm_main_int8.onnx", "Flow LM Main INT8 (76MB)"),
-                ModelFile("pocket/models/flow_lm_flow_int8.onnx", "$HF_BASE/onnx/flow_lm_flow_int8.onnx", "Flow LM Flow INT8 (10MB)"),
-                ModelFile("pocket/models/mimi_decoder_int8.onnx", "$HF_BASE/onnx/mimi_decoder_int8.onnx", "Mimi Decoder INT8 (23MB)"),
-                // Tokenizer
-                ModelFile("pocket/tokenizer.model", "$HF_BASE/tokenizer.model", "Tokenizer (59KB)"),
+                // ONNX Models — all now in per-language bundle subdirectory; encoder and conditioner now INT8
+                ModelFile("pocket/models/mimi_encoder_int8.onnx",    "$HF_BASE/$BUNDLE/mimi_encoder_int8.onnx",    "Mimi Encoder INT8 (73MB)"),
+                ModelFile("pocket/models/text_conditioner_int8.onnx","$HF_BASE/$BUNDLE/text_conditioner_int8.onnx","Text Conditioner INT8 (16MB)"),
+                ModelFile("pocket/models/flow_lm_main_int8.onnx",    "$HF_BASE/$BUNDLE/flow_lm_main_int8.onnx",    "Flow LM Main INT8 (76MB)"),
+                ModelFile("pocket/models/flow_lm_flow_int8.onnx",    "$HF_BASE/$BUNDLE/flow_lm_flow_int8.onnx",    "Flow LM Flow INT8 (10MB)"),
+                ModelFile("pocket/models/mimi_decoder_int8.onnx",    "$HF_BASE/$BUNDLE/mimi_decoder_int8.onnx",    "Mimi Decoder INT8 (23MB)"),
+                // Tokenizer and BOS conditioning — now per-language bundle
+                ModelFile("pocket/tokenizer.model",      "$HF_BASE/$BUNDLE/tokenizer.model",      "Tokenizer (59KB)"),
+                ModelFile("pocket/bos_before_voice.npy", "$HF_BASE/$BUNDLE/bos_before_voice.npy", "Voice BOS embedding"),
                 // Voice WAV files from official kyutai/tts-voices (encoded at runtime via mimi_encoder)
-                ModelFile("pocket/voices/alba.wav", "$VOICES_BASE/alba-mackenna/casual.wav", "Alba Voice"),
-                ModelFile("pocket/voices/marius.wav", "$VOICES_BASE/voice-donations/Selfie.wav", "Marius Voice"),
-                ModelFile("pocket/voices/javert.wav", "$VOICES_BASE/voice-donations/Butter.wav", "Javert Voice"),
-                ModelFile("pocket/voices/jean.wav", "$VOICES_BASE/ears/p010/freeform_speech_01.wav", "Jean Voice"),
-                ModelFile("pocket/voices/fantine.wav", "$VOICES_BASE/vctk/p244_023.wav", "Fantine Voice"),
-                ModelFile("pocket/voices/cosette.wav", "$VOICES_BASE/expresso/ex04-ex02_confused_001_channel1_499s.wav", "Cosette Voice"),
-                ModelFile("pocket/voices/eponine.wav", "$VOICES_BASE/vctk/p262_023.wav", "Eponine Voice"),
-                ModelFile("pocket/voices/azelma.wav", "$VOICES_BASE/vctk/p303_023.wav", "Azelma Voice")
+                ModelFile("pocket/voices/alba.wav",    "$VOICES_BASE/alba-mackenna/casual.wav",                        "Alba Voice"),
+                ModelFile("pocket/voices/marius.wav",  "$VOICES_BASE/voice-donations/Selfie.wav",                     "Marius Voice"),
+                ModelFile("pocket/voices/javert.wav",  "$VOICES_BASE/voice-donations/Butter.wav",                     "Javert Voice"),
+                ModelFile("pocket/voices/jean.wav",    "$VOICES_BASE/ears/p010/freeform_speech_01.wav",               "Jean Voice"),
+                ModelFile("pocket/voices/fantine.wav", "$VOICES_BASE/vctk/p244_023.wav",                              "Fantine Voice"),
+                ModelFile("pocket/voices/cosette.wav", "$VOICES_BASE/expresso/ex04-ex02_confused_001_channel1_499s.wav","Cosette Voice"),
+                ModelFile("pocket/voices/eponine.wav", "$VOICES_BASE/vctk/p262_023.wav",                              "Eponine Voice"),
+                ModelFile("pocket/voices/azelma.wav",  "$VOICES_BASE/vctk/p303_023.wav",                              "Azelma Voice")
             )
         ),
         ModelInfo(
