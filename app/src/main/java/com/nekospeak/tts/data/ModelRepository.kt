@@ -29,9 +29,9 @@ data class ModelInfo(
 object ModelRepository {
     private const val TAG = "ModelRepository"
     
-    // URLs from KevinAHM's HuggingFace space and official tts-voices
+    // URLs from KevinAHM's HuggingFace repository and official tts-voices
     // Note: mimi_encoder and text_conditioner are FP32 only, others have INT8
-    private const val HF_BASE = "https://huggingface.co/spaces/KevinAHM/pocket-tts-web/resolve/main"
+    private const val HF_BASE = "https://huggingface.co/KevinAHM/pocket-tts-onnx/resolve/main"
     private const val VOICES_BASE = "https://huggingface.co/kyutai/tts-voices/resolve/main"
     
     val models = listOf(
@@ -86,11 +86,39 @@ object ModelRepository {
         return _downloadStates[modelId]?.asStateFlow()
     }
 
+    fun getModelFile(context: Context, fileName: String): File {
+        val internalFile = File(context.filesDir, fileName)
+        if (internalFile.exists() && internalFile.length() > 1024) {
+            return internalFile
+        }
+        val externalDir = context.getExternalFilesDir(null)
+        if (externalDir != null) {
+            val externalFile = File(externalDir, fileName)
+            if (externalFile.exists() && externalFile.length() > 1024) {
+                return externalFile
+            }
+            if (fileName.endsWith("_int8.onnx")) {
+                val altName = fileName.replace("_int8.onnx", ".onnx")
+                val altExternalFile = File(externalDir, altName)
+                if (altExternalFile.exists() && altExternalFile.length() > 1024) {
+                    return altExternalFile
+                }
+            }
+        }
+        if (fileName.endsWith("_int8.onnx")) {
+            val altName = fileName.replace("_int8.onnx", ".onnx")
+            val altInternalFile = File(context.filesDir, altName)
+            if (altInternalFile.exists() && altInternalFile.length() > 1024) {
+                return altInternalFile
+            }
+        }
+        return internalFile
+    }
+
     fun isInstalled(context: Context, modelId: String): Boolean {
         val model = models.find { it.id == modelId } ?: return false
         return model.files.all { fileDef ->
-            val file = File(context.filesDir, fileDef.fileName)
-            // Check file exists and has reasonable size (> 1KB to avoid placeholder files)
+            val file = getModelFile(context, fileDef.fileName)
             file.exists() && file.length() > 1024
         }
     }

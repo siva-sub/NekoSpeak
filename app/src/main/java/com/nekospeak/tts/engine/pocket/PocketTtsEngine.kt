@@ -176,7 +176,6 @@ class PocketTtsEngine(
                 return@withContext false
             }
             
-            // Check required model files first
             val modelFiles = if (cloneOnly) {
                 listOf(MODEL_MIMI_ENCODER)
             } else {
@@ -190,9 +189,9 @@ class PocketTtsEngine(
             }
             
             for (model in modelFiles) {
-                val modelFile = File(modelsDir, model)
-                if (!modelFile.exists()) {
-                    Log.w(TAG, "Model not found: $model. Download required.")
+                val modelFile = resolveModelFile(context, "$MODELS_DIR/$model")
+                if (!modelFile.exists() || modelFile.length() <= 1024) {
+                    Log.w(TAG, "Model not found or invalid: $model. Download required.")
                     return@withContext false
                 }
             }
@@ -201,12 +200,12 @@ class PocketTtsEngine(
             val sessionOptions = createSessionOptions()
             
             Log.d(TAG, "Loading ONNX models...")
-            mimiEncoder = loadModel(modelsDir, MODEL_MIMI_ENCODER, sessionOptions)
+            mimiEncoder = loadModel(context, "$MODELS_DIR/$MODEL_MIMI_ENCODER", sessionOptions)
             if (!cloneOnly) {
-                textConditioner = loadModel(modelsDir, MODEL_TEXT_CONDITIONER, sessionOptions)
-                flowLmMain = loadModel(modelsDir, MODEL_FLOW_LM_MAIN, sessionOptions)
-                flowLmFlow = loadModel(modelsDir, MODEL_FLOW_LM_FLOW, sessionOptions)
-                mimiDecoder = loadModel(modelsDir, MODEL_MIMI_DECODER, sessionOptions)
+                textConditioner = loadModel(context, "$MODELS_DIR/$MODEL_TEXT_CONDITIONER", sessionOptions)
+                flowLmMain = loadModel(context, "$MODELS_DIR/$MODEL_FLOW_LM_MAIN", sessionOptions)
+                flowLmFlow = loadModel(context, "$MODELS_DIR/$MODEL_FLOW_LM_FLOW", sessionOptions)
+                mimiDecoder = loadModel(context, "$MODELS_DIR/$MODEL_MIMI_DECODER", sessionOptions)
                 
                 // Initialize codec
                 mimiCodec = MimiCodec(mimiEncoder!!, mimiDecoder!!, ortEnv!!)
@@ -238,6 +237,31 @@ class PocketTtsEngine(
         }
     }
     
+    private fun resolveModelFile(context: Context, relativePath: String): File {
+        val internalFile = File(context.filesDir, relativePath)
+        if (internalFile.exists() && internalFile.length() > 1024) return internalFile
+        
+        val externalDir = context.getExternalFilesDir(null)
+        if (externalDir != null) {
+            val externalFile = File(externalDir, relativePath)
+            if (externalFile.exists() && externalFile.length() > 1024) return externalFile
+            
+            if (relativePath.endsWith("_int8.onnx")) {
+                val altName = relativePath.replace("_int8.onnx", ".onnx")
+                val altExternalFile = File(externalDir, altName)
+                if (altExternalFile.exists() && altExternalFile.length() > 1024) return altExternalFile
+            }
+        }
+        
+        if (relativePath.endsWith("_int8.onnx")) {
+            val altName = relativePath.replace("_int8.onnx", ".onnx")
+            val altInternalFile = File(context.filesDir, altName)
+            if (altInternalFile.exists() && altInternalFile.length() > 1024) return altInternalFile
+        }
+        
+        return internalFile
+    }
+    
     private fun createSessionOptions(): OrtSession.SessionOptions {
         val prefs = com.nekospeak.tts.data.PrefsManager(context)
         return OrtSession.SessionOptions().apply {
@@ -266,8 +290,8 @@ class PocketTtsEngine(
      * 
      * On 64-bit (arm64-v8a, x86_64): Uses efficient mmap-based file path loading.
      */
-    private fun loadModel(dir: File, name: String, options: OrtSession.SessionOptions): OrtSession {
-        val modelFile = File(dir, name)
+    private fun loadModel(context: Context, relativePath: String, options: OrtSession.SessionOptions): OrtSession {
+        val modelFile = resolveModelFile(context, relativePath)
         val sizeInMB = modelFile.length() / 1024 / 1024
         Log.d(TAG, "Loading model: ${modelFile.absolutePath} (${sizeInMB}MB)")
         
