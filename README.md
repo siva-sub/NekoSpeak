@@ -49,6 +49,15 @@ The first and foremost consideration was **fully offline functionality** - no in
 | Kitten TTS | Nano | ~23MB | Fair | 📥 On-demand |
 | Piper | Community Voices | Varies | Varies | 📥 100+ downloadable voices |
 
+### 📂 Manual Model Sideloading (Offline Installation)
+
+If you have restricted internet access or prefer loading models completely offline:
+1. Download the Pocket-TTS ONNX model files and `tokenizer.model` (from [HuggingFace](https://huggingface.co/KevinAHM/pocket-tts-onnx)).
+2. Place the model files in your device's app-specific external storage folder:
+   `/sdcard/Android/data/com.nekospeak.tts/files/` (or `/sdcard/Android/data/com.nekospeak.tts/files/pocket/`)
+3. The app will automatically detect external storage models and mark Pocket-TTS as **Installed** without requiring an in-app download.
+
+
 ## 📸 Screenshots
 
 | Onboarding | Voice Selection | Settings |
