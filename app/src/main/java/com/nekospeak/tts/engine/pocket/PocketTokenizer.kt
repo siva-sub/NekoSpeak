@@ -45,7 +45,16 @@ class PocketTokenizer(private val context: Context) {
      * Load and parse the SentencePiece model file.
      */
     fun load() {
-        val tokenizerFile = File(context.filesDir, TOKENIZER_MODEL)
+        var tokenizerFile = File(context.filesDir, TOKENIZER_MODEL)
+        if (!tokenizerFile.exists()) {
+            val externalDir = context.getExternalFilesDir(null)
+            if (externalDir != null) {
+                val extFile = File(externalDir, TOKENIZER_MODEL)
+                if (extFile.exists() && extFile.length() > 0) {
+                    tokenizerFile = extFile
+                }
+            }
+        }
         
         if (!tokenizerFile.exists()) {
             Log.e(TAG, "Tokenizer model not found: ${tokenizerFile.absolutePath}")

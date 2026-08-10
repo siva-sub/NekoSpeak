@@ -340,6 +340,16 @@ sequenceDiagram
     Svc->>UI: Playback
 ```
 
+### 3.5. Model Storage & Sideloading Fallback
+
+To support offline-first usage and manual model sideloading without in-app downloads, `ModelRepository.kt` and `PocketTtsEngine.kt` implement an external storage resolution chain:
+
+1. **Internal Storage Check**: `context.filesDir` (e.g. `/data/user/0/com.nekospeak.tts/files/pocket/`)
+2. **External Storage Fallback**: `context.getExternalFilesDir(null)` (e.g. `/sdcard/Android/data/com.nekospeak.tts/files/pocket/`)
+3. **Quantization Alias Fallback**: Checks for both standard (`.onnx`) and quantized (`_int8.onnx`) filenames.
+
+If valid ONNX model files ($> 1\text{ KB}$) are found in external storage, `ModelRepository.isInstalled()` resolves them as valid, allowing the engine to initialize ONNX sessions directly from external storage paths.
+
 ---
 
 ## 4. Kokoro & Kitten Engine
