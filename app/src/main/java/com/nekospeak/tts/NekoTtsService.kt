@@ -38,7 +38,7 @@ class NekoTtsService : TextToSpeechService() {
     
     companion object {
         private const val TAG = "NekoTtsService"
-        private const val INIT_TIMEOUT_MS = 5000L  // 5 seconds max wait for engine init
+        private const val INIT_TIMEOUT_MS = 30000L  // 30s max wait for engine init (pocket_v1 cold init ~12s)
     }
     
     private val exceptionHandler = kotlinx.coroutines.CoroutineExceptionHandler { _, throwable ->
