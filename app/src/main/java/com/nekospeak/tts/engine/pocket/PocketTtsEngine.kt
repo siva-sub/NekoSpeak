@@ -42,10 +42,10 @@ class PocketTtsEngine(
         const val ODE_STEPS = 20  // More steps = better quality (default: 10, max: 50)
         
         // Model paths (relative to filesDir/pocket/models/)
-        // Note: mimi_encoder and text_conditioner are FP32 only (no INT8 version available)
+        // Note: all models loaded from INT8 bundle files (mimi_encoder/text_conditioner INT8 verified in onnx/english_2026-04)
         private const val MODELS_DIR = "pocket/models"
-        private const val MODEL_MIMI_ENCODER = "mimi_encoder.onnx"
-        private const val MODEL_TEXT_CONDITIONER = "text_conditioner.onnx"
+        private const val MODEL_MIMI_ENCODER = "mimi_encoder_int8.onnx"
+        private const val MODEL_TEXT_CONDITIONER = "text_conditioner_int8.onnx"
         private const val MODEL_FLOW_LM_MAIN = "flow_lm_main_int8.onnx"
         private const val MODEL_FLOW_LM_FLOW = "flow_lm_flow_int8.onnx"
         private const val MODEL_MIMI_DECODER = "mimi_decoder_int8.onnx"
